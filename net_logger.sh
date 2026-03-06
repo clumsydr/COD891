@@ -8,7 +8,8 @@ ROOTFS="$WORKDIR/fakeroot"
 OUTPUT_DIR="$WORKDIR/net_logs"
 PCAP_DIR="$OUTPUT_DIR/pcaps"
 LOG_FILE="$OUTPUT_DIR/speed_history.csv"
-INTERVAL=600
+INTERVAL=30
+POISSON_INTERVAL=3
 
 mkdir -p "$PCAP_DIR"
 
@@ -45,8 +46,8 @@ fi
 cp "$WORKDIR/cacert.pem" "$ROOTFS/etc/ssl/certs/ca-certificates.crt"
 
 # 5. Move the binary into the container
-cp "$WORKDIR/speedtest-go" "$ROOTFS/"
-chmod +x "$ROOTFS/speedtest-go"
+cp "$WORKDIR/speedtest" "$ROOTFS/"
+chmod +x "$ROOTFS/speedtest"
 
 # 6. Bind mount the system hardware so the binary can see your network interface
 mount -o bind /dev "$ROOTFS/dev"
@@ -54,7 +55,7 @@ mount -o bind /proc "$ROOTFS/proc"
 mount -o bind /sys "$ROOTFS/sys"
 
 # 7. Safety trap: unmount everything cleanly if you press Ctrl+C
-trap "echo -e '\n[*] Tearing down container and exiting...'; umount $ROOTFS/dev 2>/dev/null; umount $ROOTFS/proc 2>/dev/null; umount $ROOTFS/sys 2>/dev/null; exit" INT TERM
+trap "echo -e '\n[*] Tearing down container and exiting...'; kill \$TCPDUMP_PID 2>/dev/null; umount $ROOTFS/dev 2>/dev/null; umount $ROOTFS/proc 2>/dev/null; umount $ROOTFS/sys 2>/dev/null; exit" INT TERM
 
 # ==========================================
 # THE LOGGER LOOP
@@ -65,45 +66,52 @@ fi
 
 echo "[*] Starting Network Logger..."
 while true; do
-    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-    READABLE_DATE=$(date)
-    PCAP_FILE="$PCAP_DIR/capture_$TIMESTAMP.pcap"
-    
-    # Detect the active interface
-    ACTIVE_IFACE=$(ip route get 8.8.8.8 2>/dev/null | sed -n 's/.*dev \([^ ]*\).*/\1/p' | head -n 1)
-    ACTIVE_IFACE=${ACTIVE_IFACE:-wlan0}
+    CHANCE=$(( RANDOM % 10 ))
 
-    echo "[*] Starting test at $READABLE_DATE on $ACTIVE_IFACE"
+    if [ $CHANCE -eq 0 ]; then
+        TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+        READABLE_DATE=$(date)
+        PCAP_FILE="$PCAP_DIR/capture_$TIMESTAMP.pcap"
+        
+        # Detect the active interface
+        ACTIVE_IFACE=$(ip route get 8.8.8.8 2>/dev/null | sed -n 's/.*dev \([^ ]*\).*/\1/p' | head -n 1)
+        ACTIVE_IFACE=${ACTIVE_IFACE:-wlan0}
 
-    # Start PCAP
-    tcpdump -i "$ACTIVE_IFACE" -s 96 -w "$PCAP_FILE" &>/dev/null &
-    TCPDUMP_PID=$!
+        echo "[*] Starting test at $READABLE_DATE on $ACTIVE_IFACE"
 
-    sleep 2
+        # Start PCAP
+        tcpdump -i "$ACTIVE_IFACE" -s 96 -w "$PCAP_FILE" &>/dev/null &
+        TCPDUMP_PID=$!
 
-    # RUN THE BINARY INSIDE THE CHROOT CONTAINER
-    RAW_RESULTS=$(NO_COLOR=1 chroot "$ROOTFS" /speedtest-go 2>/dev/null)
+        sleep 2
 
-    # Stop PCAP
-    kill $TCPDUMP_PID
-    wait $TCPDUMP_PID 2>/dev/null
+        # RUN THE BINARY INSIDE THE CHROOT CONTAINER
+        RAW_RESULTS=$(NO_COLOR=1 chroot "$ROOTFS" /speedtest --accept-license --accept-gdpr 2>/dev/null)
 
-    CLEAN_RESULTS=$(echo "$RAW_RESULTS" | tr -d '\033' | sed 's/[[][0-9;]*m//g')
+        # Stop PCAP
+        kill $TCPDUMP_PID
+        wait $TCPDUMP_PID 2>/dev/null
 
-    # Extract the very first valid number found on each line
-    PING=$(echo "$CLEAN_RESULTS" | grep -iE '(ping|latency)' | grep -oE '[0-9]+(\.[0-9]+)?' | head -n 1)
-    DOWN=$(echo "$CLEAN_RESULTS" | grep -i 'download' | grep -oE '[0-9]+(\.[0-9]+)?' | head -n 1)
-    UP=$(echo "$CLEAN_RESULTS" | grep -i 'upload' | grep -oE '[0-9]+(\.[0-9]+)?' | head -n 1)
+        CLEAN_RESULTS=$(echo "$RAW_RESULTS" | tr -d '\033' | sed 's/[[][0-9;]*m//g')
 
-    # Fallbacks in case the test completely failed
-    PING=${PING:-0.00}
-    DOWN=${DOWN:-0.00}
-    UP=${UP:-0.00}
+        # Extract the very first valid number found on each line
+        PING=$(echo "$CLEAN_RESULTS" | grep -iE '(ping|latency)' | grep -oE '[0-9]+(\.[0-9]+)?' | head -n 1)
+        DOWN=$(echo "$CLEAN_RESULTS" | grep -i 'download' | grep -oE '[0-9]+(\.[0-9]+)?' | head -n 1)
+        UP=$(echo "$CLEAN_RESULTS" | grep -i 'upload' | grep -oE '[0-9]+(\.[0-9]+)?' | head -n 1)
 
-    echo "$READABLE_DATE,$PING,$DOWN,$UP,$ACTIVE_IFACE,capture_$TIMESTAMP.pcap" >> "$LOG_FILE"
-    echo "Results: Ping: ${PING}ms | Down: ${DOWN} Mbps | Up: ${UP} Mbps"
+        # Fallbacks in case the test completely failed
+        PING=${PING:-0.00}
+        DOWN=${DOWN:-0.00}
+        UP=${UP:-0.00}
 
-    echo "[*] Sleeping for $INTERVAL seconds..."
-    sleep $INTERVAL
-    echo ""
+        echo "$READABLE_DATE,$PING,$DOWN,$UP,$ACTIVE_IFACE,capture_$TIMESTAMP.pcap" >> "$LOG_FILE"
+        echo "Results: Ping: ${PING}ms | Down: ${DOWN} Mbps | Up: ${UP} Mbps"
+
+        echo "[*] Sleeping for $INTERVAL seconds..."
+        sleep $INTERVAL
+        echo ""
+    else
+        echo "POISSONED... checking again in 3 seconds."
+        sleep $POISSON_INTERVAL
+    fi
 done
