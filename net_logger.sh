@@ -8,7 +8,7 @@ ROOTFS="$WORKDIR/fakeroot"
 OUTPUT_DIR="$WORKDIR/net_logs"
 PCAP_DIR="$OUTPUT_DIR/pcaps"
 LOG_FILE="$OUTPUT_DIR/speed_history.csv"
-INTERVAL=60
+INTERVAL=600
 
 mkdir -p "$PCAP_DIR"
 
@@ -82,21 +82,23 @@ while true; do
     sleep 2
 
     # RUN THE BINARY INSIDE THE CHROOT CONTAINER
-    JSON_RESULTS=$(chroot "$ROOTFS" /speedtest-go --json 2>/dev/null)
+    RAW_RESULTS=$(NO_COLOR=1 chroot "$ROOTFS" /speedtest-go 2>/dev/null)
 
     # Stop PCAP
     kill $TCPDUMP_PID
     wait $TCPDUMP_PID 2>/dev/null
 
-    # Parse JSON using native Android tools
-    PING=$(echo "$JSON_RESULTS" | grep -o '"ping":[0-9.]*' | awk -F':' '{print $2}')
-    DOWN=$(echo "$JSON_RESULTS" | grep -o '"download":[0-9.]*' | awk -F':' '{print $2}')
-    UP=$(echo "$JSON_RESULTS" | grep -o '"upload":[0-9.]*' | awk -F':' '{print $2}')
+    CLEAN_RESULTS=$(echo "$RAW_RESULTS" | tr -d '\033' | sed 's/[[][0-9;]*m//g')
 
-    # Handle blank values if the test failed
-    PING=${PING:-0}
-    DOWN=${DOWN:-0}
-    UP=${UP:-0}
+    # Extract the very first valid number found on each line
+    PING=$(echo "$CLEAN_RESULTS" | grep -iE '(ping|latency)' | grep -oE '[0-9]+(\.[0-9]+)?' | head -n 1)
+    DOWN=$(echo "$CLEAN_RESULTS" | grep -i 'download' | grep -oE '[0-9]+(\.[0-9]+)?' | head -n 1)
+    UP=$(echo "$CLEAN_RESULTS" | grep -i 'upload' | grep -oE '[0-9]+(\.[0-9]+)?' | head -n 1)
+
+    # Fallbacks in case the test completely failed
+    PING=${PING:-0.00}
+    DOWN=${DOWN:-0.00}
+    UP=${UP:-0.00}
 
     echo "$READABLE_DATE,$PING,$DOWN,$UP,$ACTIVE_IFACE,capture_$TIMESTAMP.pcap" >> "$LOG_FILE"
     echo "Results: Ping: ${PING}ms | Down: ${DOWN} Mbps | Up: ${UP} Mbps"
