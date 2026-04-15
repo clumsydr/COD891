@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math, argparse
 
-def plot_byte_trends(filepath, record_count_index=28, record_length=32):
+def plot_byte_trends(filepath, output_dir, record_count_index=28, record_length=32):
     """
     Extracts records and plots the byte trends using subplots and a heatmap.
     
@@ -78,7 +78,7 @@ def plot_byte_trends(filepath, record_count_index=28, record_length=32):
             ax.axis('off')
 
     fig1.tight_layout(rect=[0, 0.03, 1, 0.98])
-    fig1.savefig('byte_trends_subplots.png')
+    fig1.savefig(f'{output_dir}/byte_trends_subplots.png')
 
     # --- 3. Generate Heatmap ---
     # Dynamically scale the height of the heatmap if there are many bytes
@@ -97,7 +97,7 @@ def plot_byte_trends(filepath, record_count_index=28, record_length=32):
         ax2.set_yticks(range(record_length))
         
     fig2.tight_layout()
-    fig2.savefig('byte_trends_heatmap.png')
+    fig2.savefig(f'{output_dir}/byte_trends_heatmap.png')
 
     print(f"Success! Extracted {len(records)} records (Length: {record_length}). Generated adaptable plots.")
 
@@ -105,9 +105,9 @@ def plot_byte_trends(filepath, record_count_index=28, record_length=32):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description="Parse 0xB887 NR5G PDSCH payloads (v2 + v3).")
     ap.add_argument("input", nargs="?", help="Hex text file (stdin if omitted)")
-    ap.add_argument("output", nargs="?", help="Hex text file (stdout if omitted)")
-    ap.add_argument("record_count_index", default=28)
-    ap.add_argument("record_length", default=32)
+    ap.add_argument("output_dir", nargs="?", help="Output directory")
+    ap.add_argument("--record_count_index", default=28, nargs="?")
+    ap.add_argument("--record_length", default=32)
     args = ap.parse_args()
 
-    plot_byte_trends(args.input, int(args.record_count_index), int(args.record_length))
+    plot_byte_trends(args.input, args.output_dir, int(args.record_count_index), int(args.record_length))

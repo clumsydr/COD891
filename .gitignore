@@ -1,7 +1,6 @@
 .DS_Store
 /*.txt
 speedtest/speedtest
-b887_parser/AshishPhoneLogs/*.qmdl
-b887_parser/TarunPhoneLogs/*.qmdl
-.venv
+*.qmdl
 *.png
+.venv

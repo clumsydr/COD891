@@ -42,7 +42,8 @@ from typing import List, Optional, Tuple
 LOG_CODE        = 0xB887
 QXDM_HDR_LEN    = 12     # len(2) + code(2) + timestamp(8)
 META_LEN        = 16     # version(4) + bmask(4) + subid(1) + pad(6) + num_records(1)
-RECORDS_START   = QXDM_HDR_LEN + META_LEN   # = 28 (same for both versions)
+#####RECORDS_START   = QXDM_HDR_LEN + META_LEN   # = 28 (same for both versions)
+
 
 # Version 2 layout
 V2_REC_HDR_LEN   = 10
@@ -50,7 +51,8 @@ V2_ENTRY_LEN     = 18
 V2_REC_LEN       = V2_REC_HDR_LEN + V2_ENTRY_LEN   # 28
 
 # Version 3 layout
-V3_REC_HDR_LEN   = 2
+###### V3_REC_HDR_LEN   = 2
+V3_REC_HDR_LEN   = 10
 V3_ENTRY_LEN     = 22
 V3_REC_LEN       = V3_REC_HDR_LEN + V3_ENTRY_LEN   # 24
 
@@ -130,30 +132,35 @@ def parse_record_v3(rec: bytes, payload_idx: int, rec_idx: int) -> PdschRecord:
 # ── Payload parser ────────────────────────────────────────────────────────────
 def parse_payload(payload: bytes, payload_idx: int) -> List[PdschRecord]:
     """Parse one B887 payload and return all records."""
-    if len(payload) < RECORDS_START:
-        return []
     if u16(payload, 2) != LOG_CODE:
         return []
 
     version_word = u32(payload, 12)
     major = version_word >> 16
 
+    RECORDS_START = 0
+    parse_rec = parse_record_v2 # beep
     if major == 2:
         rec_len     = V2_REC_LEN       # 28
-        parse_rec   = parse_record_v2
-        num_records = payload[27]      # explicit field in metadata
+        RECORDS_START = 27
+        #####parse_rec   = parse_record_v2
+        #####num_records = payload[27]      # explicit field in metadata
     elif major == 3:
         rec_len     = V3_REC_LEN       # 24
-        parse_rec   = parse_record_v3
+        #####parse_rec   = parse_record_v3
         # num_records field appears to be absent/zero in v3 metadata;
         # derive from declared packet length instead.
-        declared_len = u16(payload, 0)
-        num_records  = (declared_len - RECORDS_START) // rec_len
+        #####declared_len = u16(payload, 0)
+        #####num_records  = (declared_len - RECORDS_START) // rec_len
+        RECORDS_START = 19
     else:
         # Unknown version — attempt v2 layout as best-effort
         rec_len     = V2_REC_LEN
-        parse_rec   = parse_record_v2
-        num_records = payload[27]
+        #####parse_rec   = parse_record_v2
+        #####num_records = payload[27]
+        RECORDS_START = 27
+
+    num_records = payload[RECORDS_START]
 
     # Clamp to available data
     available = (len(payload) - RECORDS_START) // rec_len
@@ -161,7 +168,7 @@ def parse_payload(payload: bytes, payload_idx: int) -> List[PdschRecord]:
 
     results = []
     for rec_idx in range(num_records):
-        base = RECORDS_START + rec_idx * rec_len
+        base = RECORDS_START + 1 + rec_idx * rec_len
         rec  = payload[base : base + rec_len]
         if len(rec) < rec_len:
             break
