@@ -1,4 +1,4 @@
 .DS_Store
-*.txt
+/*.txt
 speedtest/speedtest
-b887_parser/AshishPhoneLogs/*
+b887_parser/AshishPhoneLogs/*.qmdl
