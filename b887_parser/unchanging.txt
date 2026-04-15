@@ -1,0 +1,20 @@
+Parsing 'TarunPhoneLogs/WebBrowsing/payloads.txt' (1208 lines detected)...
+Total valid 32-byte records extracted: 2204
+
+=======================================================
+ BITS THAT NEVER CHANGED FROM '1' ACROSS ALL PAYLOADS
+=======================================================
+Byte 01 | Hex: 0x01 | Binary: 00000001
+Byte 08 | Hex: 0x01 | Binary: 00000001
+Byte 11 | Hex: 0x18 | Binary: 00011000
+Byte 12 | Hex: 0xF6 | Binary: 11110110
+Byte 13 | Hex: 0x81 | Binary: 10000001
+Byte 14 | Hex: 0xB3 | Binary: 10110011
+Byte 15 | Hex: 0x26 | Binary: 00100110
+Byte 18 | Hex: 0x80 | Binary: 10000000
+Byte 26 | Hex: 0x21 | Binary: 00100001
+Byte 29 | Hex: 0x20 | Binary: 00100000
+Byte 31 | Hex: 0x04 | Binary: 00000100
+
+Full 32-Byte Static-One Mask (Hex):
+00 01 00 00 00 00 00 00 01 00 00 18 F6 81 B3 26 00 00 80 00 00 00 00 00 00 00 21 00 00 20 00 04

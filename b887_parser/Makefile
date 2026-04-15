@@ -1,8 +1,8 @@
 # DIRECTORY=AshishPhoneLogs/NoActivity
-# FILE=old_phone_no_activity
+# FILE=payloads
 
-DIRECTORY=TarunPhoneLogs/Output
-FILE=output
+DIRECTORY=TarunPhoneLogs/WebBrowsing
+FILE=payloads
 
 ptr:
 	python3 packet_to_record.py $(DIRECTORY)/$(FILE).txt $(DIRECTORY)/$(FILE)_records.txt 28 32
@@ -15,3 +15,6 @@ parse_old:
 
 parse:
 	python3 b887_parser_new.py $(DIRECTORY)/$(FILE).txt > $(DIRECTORY)/$(FILE)_parsed.txt
+
+find_scs:
+	python3 unchanging.py $(DIRECTORY)/$(FILE).txt > unchanging.txt
