@@ -2,15 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math, argparse
 
-def plot_byte_trends(filepath, output_dir, record_count_index=28, record_length=32):
-    """
-    Extracts records and plots the byte trends using subplots and a heatmap.
-    
-    Args:
-        filepath (str): Path to the input text file.
-        record_count_index (int): 0-based index of the byte indicating the number of records.
-        record_length (int): The number of bytes in each record.
-    """
+def plot_byte_trends_batched(filepath, output_dir, record_count_index=28, record_length=32, batch_size=100):
     records = []
     
     # --- 1. Data Extraction ---
@@ -45,61 +37,67 @@ def plot_byte_trends(filepath, output_dir, record_count_index=28, record_length=
         return
 
     if not records:
-        print("No valid records were extracted. Cannot generate plots.")
+        print("No valid records were extracted.")
         return
 
-    data = np.array(records)
+    total_records = len(records)
+    print(f"Total records extracted: {total_records}")
 
-    # --- 2. Generate Subplots (Line Charts) ---
-    # Dynamically calculate rows needed for 4 columns based on record_length
     cols = 4
     rows = math.ceil(record_length / cols)
-    
-    fig1, axes = plt.subplots(rows, cols, figsize=(20, 3 * rows), sharex=True)
-    fig1.suptitle(f'Value of Each Byte (0-{record_length-1}) Across Records', fontsize=20)
-    
-    # Flatten the axes array to iterate through it easily
-    axes_flat = axes.flatten() if rows * cols > 1 else [axes]
-
-    for i, ax in enumerate(axes_flat):
-        if i < data.shape[1]:
-            ax.plot(data[:, i], marker='o', markersize=3, linestyle='-', linewidth=1)
-            ax.set_title(f'Byte {i}', fontsize=12)
-            ax.grid(True, alpha=0.5)
-            
-            # Add y-labels only on the leftmost column charts
-            if i % cols == 0:
-                ax.set_ylabel('Byte Value')
-            # Add x-labels only on the bottom row charts
-            if i >= (rows - 1) * cols:
-                ax.set_xlabel('Record Index')
-        else:
-            # Hide extra empty subplots if record_length doesn't divide evenly by 4
-            ax.axis('off')
-
-    fig1.tight_layout(rect=[0, 0.03, 1, 0.98])
-    fig1.savefig(f'{output_dir}/byte_trends_subplots.png')
-
-    # --- 3. Generate Heatmap ---
-    # Dynamically scale the height of the heatmap if there are many bytes
     heatmap_height = max(8, record_length * 0.25)
-    fig2, ax2 = plt.subplots(figsize=(15, heatmap_height))
-    
-    c = ax2.imshow(data.T, aspect='auto', cmap='viridis', interpolation='none', origin='upper')
-    fig2.colorbar(c, ax=ax2, label='Byte Value (0-255)')
-    
-    ax2.set_title('Heatmap of All Bytes Across Records')
-    ax2.set_xlabel('Record Index')
-    ax2.set_ylabel(f'Byte Index (0-{record_length-1})')
-    
-    # Only label every y-tick if we aren't plotting a massive record length
-    if record_length <= 64:
-        ax2.set_yticks(range(record_length))
-        
-    fig2.tight_layout()
-    fig2.savefig(f'{output_dir}/byte_trends_heatmap.png')
 
-    print(f"Success! Extracted {len(records)} records (Length: {record_length}). Generated adaptable plots.")
+    # --- 2. Process in Batches ---
+    for batch_start in range(0, total_records, batch_size):
+        batch_end = min(batch_start + batch_size, total_records)
+        batch_records = records[batch_start:batch_end]
+        data = np.array(batch_records)
+        x_range = range(batch_start, batch_end)
+
+        # Generate Subplots
+        fig1, axes = plt.subplots(rows, cols, figsize=(20, 3 * rows), sharex=True)
+        fig1.suptitle(f'Value of Each Byte (0-{record_length-1}) | Records {batch_start} to {batch_end-1}', fontsize=20)
+        
+        axes_flat = axes.flatten() if rows * cols > 1 else [axes]
+
+        for i, ax in enumerate(axes_flat):
+            if i < data.shape[1]:
+                # Plot with precise X coordinates
+                ax.plot(x_range, data[:, i], marker='o', markersize=3, linestyle='-', linewidth=1)
+                ax.set_title(f'Byte {i}', fontsize=12)
+                ax.grid(True, alpha=0.5)
+                
+                if i % cols == 0:
+                    ax.set_ylabel('Byte Value')
+                if i >= (rows - 1) * cols:
+                    ax.set_xlabel('Record Index')
+            else:
+                ax.axis('off')
+
+        fig1.tight_layout(rect=[0, 0.03, 1, 0.98])
+        subplots_filename = f'{output_dir}/byte_trends_subplots_{batch_start}_to_{batch_end-1}.png'
+        fig1.savefig(subplots_filename)
+        plt.close(fig1)
+
+        # Generate Heatmap
+        fig2, ax2 = plt.subplots(figsize=(15, heatmap_height))
+        # Ensure the heatmap x-axis aligns with the batched record indices
+        c = ax2.imshow(data.T, aspect='auto', cmap='viridis', interpolation='none', 
+                       origin='upper', extent=[batch_start, batch_end - 1, record_length - 0.5, -0.5])
+        fig2.colorbar(c, ax=ax2, label='Byte Value (0-255)')
+        ax2.set_title(f'Heatmap of All Bytes | Records {batch_start} to {batch_end-1}')
+        ax2.set_xlabel('Record Index')
+        ax2.set_ylabel(f'Byte Index (0-{record_length-1})')
+        
+        if record_length <= 64:
+            ax2.set_yticks(range(record_length))
+            
+        fig2.tight_layout()
+        heatmap_filename = f'{output_dir}/byte_trends_heatmap_{batch_start}_to_{batch_end-1}.png'
+        fig2.savefig(heatmap_filename)
+        plt.close(fig2)
+
+        print(f"Generated {subplots_filename} and {heatmap_filename}")
 
 # Execution Handling
 if __name__ == '__main__':
@@ -110,4 +108,4 @@ if __name__ == '__main__':
     ap.add_argument("--record_length", default=32)
     args = ap.parse_args()
 
-    plot_byte_trends(args.input, args.output_dir, int(args.record_count_index), int(args.record_length))
+    plot_byte_trends_batched(args.input, args.output_dir, int(args.record_count_index), int(args.record_length))
