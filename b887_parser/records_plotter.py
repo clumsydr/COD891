@@ -79,33 +79,13 @@ def plot_byte_trends_batched(filepath, output_dir, record_count_index=28, record
         fig1.savefig(subplots_filename)
         plt.close(fig1)
 
-        # Generate Heatmap
-        fig2, ax2 = plt.subplots(figsize=(15, heatmap_height))
-        # Ensure the heatmap x-axis aligns with the batched record indices
-        c = ax2.imshow(data.T, aspect='auto', cmap='viridis', interpolation='none', 
-                       origin='upper', extent=[batch_start, batch_end - 1, record_length - 0.5, -0.5])
-        fig2.colorbar(c, ax=ax2, label='Byte Value (0-255)')
-        ax2.set_title(f'Heatmap of All Bytes | Records {batch_start} to {batch_end-1}')
-        ax2.set_xlabel('Record Index')
-        ax2.set_ylabel(f'Byte Index (0-{record_length-1})')
-        
-        if record_length <= 64:
-            ax2.set_yticks(range(record_length))
-            
-        fig2.tight_layout()
-        heatmap_filename = f'{output_dir}/byte_trends_heatmap_{batch_start}_to_{batch_end-1}.png'
-        fig2.savefig(heatmap_filename)
-        plt.close(fig2)
-
-        print(f"Generated {subplots_filename} and {heatmap_filename}")
-
 # Execution Handling
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description="Parse 0xB887 NR5G PDSCH payloads (v2 + v3).")
     ap.add_argument("input", nargs="?", help="Hex text file (stdin if omitted)")
     ap.add_argument("output_dir", nargs="?", help="Output directory")
-    ap.add_argument("--record_count_index", default=28, nargs="?")
-    ap.add_argument("--record_length", default=32)
+    ap.add_argument("record_count_index", default=28, nargs="?")
+    ap.add_argument("record_length", default=32)
     args = ap.parse_args()
 
     plot_byte_trends_batched(args.input, args.output_dir, int(args.record_count_index), int(args.record_length))

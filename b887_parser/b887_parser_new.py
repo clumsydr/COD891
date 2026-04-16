@@ -68,6 +68,8 @@ class PdschRecord:
     frame:       Optional[int]
     scs:         Optional[str]
     carrier_id:  Optional[int]
+    pci:         int
+    nr_arfcn:    int
     tb_size:     int
     mcs:         int
     num_rbs:     int
@@ -81,7 +83,7 @@ class PdschRecord:
 def u16(b, o): return b[o] | (b[o+1] << 8)
 def u32(b, o): return b[o] | (b[o+1]<<8) | (b[o+2]<<16) | (b[o+3]<<24)
 
-def extract_entry_fields(entry: bytes) -> Tuple[int, int, int, int, int]:
+def extract_entry_fields(entry: bytes) -> Tuple[int, int, int, int, int, int, int]:
     """
     Extract (tb_size, mcs, num_rbs, harq_id, k1) from a PDSCH entry.
     Entry layout is identical between v2 and v3 for these fields:
@@ -91,27 +93,29 @@ def extract_entry_fields(entry: bytes) -> Tuple[int, int, int, int, int]:
       entry[11]   : HARQ ID  = (byte >> 3) & 0xF
       entry[12-13]: K1       = (uint16 LE >> 6) & 0xF
     """
+    pci        = u16(entry, 2) & 0x3FF
+    nr_arfcn   = (u32(entry, 3) >> 2) & 0x3FFFFF
     tb_size = (u32(entry, 6) >> 5) & 0x1FFFF
     mcs     = (u16(entry, 9) >> 2) & 0x1F
     num_rbs = u16(entry, 10) & 0x1FF
     harq_id = (entry[11] >> 3) & 0xF
     k1      = (u16(entry, 12) >> 6) & 0xF
-    return tb_size, mcs, num_rbs, harq_id, k1
+    return pci, nr_arfcn, tb_size, mcs, num_rbs, harq_id, k1
 
 # ── Per-version record parsers ────────────────────────────────────────────────
-def parse_record_v2(rec: bytes, payload_idx: int, rec_idx: int) -> PdschRecord:
+def parse_record_v2(rec: bytes, payload_idx: int, rec_idx: int, version: int) -> PdschRecord:
     """Parse a 28-byte version-2 record."""
     slot       = rec[0]
+    mu         = rec[1]
     frame      = u16(rec, 2)
-    mu         = rec[9] & 0x07
     carrier_id = rec[5]
     entry      = rec[V2_REC_HDR_LEN:]
-    tb, mcs, rbs, harq, k1 = extract_entry_fields(entry)
+    pci, nr_arfcn, tb, mcs, rbs, harq, k1 = extract_entry_fields(entry)
     return PdschRecord(
-        payload_idx=payload_idx, record_idx=rec_idx, version=2,
+        payload_idx=payload_idx, record_idx=rec_idx, version=version,
         slot=slot, frame=frame,
         scs=SCS_MAP.get(mu, f"mu{mu}"),
-        carrier_id=carrier_id,
+        carrier_id=carrier_id, pci=pci, nr_arfcn=nr_arfcn,
         tb_size=tb, mcs=mcs, num_rbs=rbs, harq_id=harq, k1=k1,
     )
 
@@ -172,7 +176,7 @@ def parse_payload(payload: bytes, payload_idx: int) -> List[PdschRecord]:
         rec  = payload[base : base + rec_len]
         if len(rec) < rec_len:
             break
-        results.append(parse_rec(rec, payload_idx, rec_idx))
+        results.append(parse_rec(rec, payload_idx, rec_idx, major))
     return results
 
 # ── Stream splitter ───────────────────────────────────────────────────────────
@@ -219,8 +223,8 @@ def print_results(results: List[PdschRecord]):
         print("No B887 records found.")
         return
 
-    COL = ("Pkt","Rec","Ver","Slot","Frame","SCS","CID","TB Size","MCS","Num RBs","HARQ","K1")
-    FMT = "{:>4}  {:>4}  {:>4}  {:>5}  {:>6}  {:>7}  {:>4}  {:>8}  {:>4}  {:>8}  {:>5}  {:>4}"
+    COL = ("Pkt","Rec","Ver","Slot","Frame","SCS","CID","Phy Cell ID", "NR-ARFCN", "TB Size","MCS","Num RBs","HARQ","K1")
+    FMT = "{:>4}  {:>4}  {:>4}  {:>5}  {:>6}  {:>7}  {:>4} {:>8} {:>12} {:>8}  {:>4}  {:>8}  {:>5}  {:>4}"
     SEP = "=" * 83
 
     print(f"\n{SEP}")
@@ -232,7 +236,7 @@ def print_results(results: List[PdschRecord]):
         print("  " + FMT.format(
             r.payload_idx, r.record_idx, r.version,
             _fmt(r.slot), _fmt(r.frame), _fmt(r.scs),
-            _fmt(r.carrier_id), r.tb_size, r.mcs,
+            _fmt(r.carrier_id), r.pci, r.nr_arfcn, r.tb_size, r.mcs,
             r.num_rbs, r.harq_id, r.k1))
 
     mcs_vals = [r.mcs for r in results]

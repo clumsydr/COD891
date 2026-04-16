@@ -56,6 +56,8 @@ class PdschRecord:
     frame:       int
     scs:         str
     carrier_id:  int
+    pci:         int
+    nr_arfcn:    int
     tb_size:     int
     mcs:         int
     num_rbs:     int
@@ -118,9 +120,11 @@ def parse_payload(payload: bytes, payload_idx: int) -> List[PdschRecord]:
         r = payload[base : base + RECORD_LEN]
 
         slot       = r[0]
+        mu         = r[1]
         frame      = u16(r, 2)
-        mu         = r[9] & 0x07
         carrier_id = r[5]
+        pci        = u16(r, 12) & 0x3FF
+        nr_arfcn   = (u32(r, 13) >> 2) & 0x3FFFFF
         tb_size    = (u32(r, 16) >> 5) & 0x1FFFF
         mcs        = (u16(r, 19) >> 2) & 0x1F
         num_rbs    = u16(r, 20) & 0x1FF
@@ -132,6 +136,7 @@ def parse_payload(payload: bytes, payload_idx: int) -> List[PdschRecord]:
             slot=slot, frame=frame,
             scs=SCS_MAP.get(mu, f"mu{mu}"),
             carrier_id=carrier_id,
+            pci=pci, nr_arfcn=nr_arfcn,
             tb_size=tb_size, mcs=mcs,
             num_rbs=num_rbs, harq_id=harq_id, k1=k1,
         ))
@@ -193,8 +198,8 @@ def print_results(results: List[PdschRecord]):
         print("No B887 records found.")
         return
 
-    COL = ("Pkt","Rec","Slot","Frame","SCS","CID","TB Size","MCS","Num RBs","HARQ","K1")
-    FMT = "{:>4}  {:>4}  {:>5}  {:>6}  {:>7}  {:>4}  {:>8}  {:>4}  {:>8}  {:>5}  {:>4}"
+    COL = ("Pkt","Rec","Slot","Frame","SCS","CID", "Phy Cell ID", "NR-ARFCN", "TB Size","MCS","Num RBs","HARQ","K1")
+    FMT = "{:>4}  {:>4}  {:>5}  {:>6}  {:>7}  {:>4} {:>7} {:>10}  {:>8}  {:>4}  {:>8}  {:>5}  {:>4}"
     SEP = "=" * 76
 
     print(f"\n{SEP}")
@@ -205,7 +210,7 @@ def print_results(results: List[PdschRecord]):
     for r in results:
         print("  " + FMT.format(
             r.payload_idx, r.record_idx, r.slot, r.frame,
-            r.scs, r.carrier_id, r.tb_size, r.mcs,
+            r.scs, r.carrier_id, r.pci, r.nr_arfcn, r.tb_size, r.mcs,
             r.num_rbs, r.harq_id, r.k1))
 
     mcs_vals = [r.mcs for r in results]

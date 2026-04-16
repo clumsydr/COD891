@@ -1,7 +1,22 @@
+import argparse
+import sys
+
 def decode_full_b887_payload(hex_payload):
     # Clean the hex string and convert to raw bytes
     hex_payload = hex_payload.replace(" ", "").replace(",", "").strip()
-    payload_bytes = bytes.fromhex(hex_payload)
+    
+    if not hex_payload:
+        return # Skip empty lines
+        
+    try:
+        payload_bytes = bytes.fromhex(hex_payload)
+    except ValueError:
+        print(f"Skipping invalid hex payload: {hex_payload[:30]}...")
+        return
+        
+    if len(payload_bytes) < 28:
+        print(f"Skipping truncated payload ({len(payload_bytes)} bytes).")
+        return
     
     # --- 1. Parse Log Header (28 Bytes) ---
     length = int.from_bytes(payload_bytes[0:2], 'little')
@@ -22,6 +37,11 @@ def decode_full_b887_payload(hex_payload):
         print(f"========================================")
         
         offset = 28 + (i * 28)
+        
+        if offset + 28 > len(payload_bytes):
+            print(f"  [!] Warning: Record {i+1} exceeds payload length.")
+            break
+            
         record_bytes = payload_bytes[offset : offset + 28]
         
         # --- KNOWN EXTRACTED FIELDS ---
@@ -57,10 +77,23 @@ def decode_full_b887_payload(hex_payload):
         print("\n")
 
 # ==========================================
-# Run the decoder
+# Run the decoder from a file
 # ==========================================
 if __name__ == "__main__":
-    # Test Payload from File 1_3.xlsx
-    payload = "A8 00 87 B8 79 52 E3 AC A0 6F 0F 01 05 00 02 00 00 00 00 00 00 00 00 00 00 00 00 05 03 01 D8 00 01 00 00 00 07 D8 0C 18 F6 81 B3 26 20 01 86 34 11 29 C0 42 07 00 C9 00 06 01 D8 00 01 00 00 00 07 D8 18 18 F6 81 B3 26 40 03 94 40 C4 30 00 42 03 00 C9 00 07 01 D8 00 01 00 00 00 07 D8 1C 18 F6 81 B3 26 40 02 9C 3C 11 39 C0 41 02 00 C9 00 08 01 D8 00 01 00 00 00 07 D8 20 18 F6 81 B3 26 A0 86 9B 40 10 41 C0 41 03 00 C9 00 09 01 D8 00 01 00 00 00 07 D8 24 18 F6 81 B3 26 80 05 9A 78 E0 7C 80 41 01 81 C9 00"
-    payload = "38 00 87 B8 12 3C 40 05 A0 6F 0F 01 05 00 02 00 00 00 00 00 00 00 00 00 00 00 00 01 00 01 E4 03 01 00 00 00 07 E4 03 18 F6 81 B3 26 E0 0D 80 30 01 18 40 21 07 00 C9 00"
-    decode_full_b887_payload(payload)
+    parser = argparse.ArgumentParser(description="Decode 5G NR MAC PDSCH (0xB887) payloads line by line from a file.")
+    parser.add_argument("filename", help="Path to the text file containing the hex payloads.")
+    args = parser.parse_args()
+
+    try:
+        with open(args.filename, "r") as f:
+            lines = f.readlines()
+            
+        print(f"Parsing '{args.filename}' ({len(lines)} lines detected)...\n")
+        
+        for idx, line in enumerate(lines):
+            print(f"\n>>> DECODING LINE {idx + 1} <<<")
+            decode_full_b887_payload(line)
+            
+    except FileNotFoundError:
+        print(f"\n[ERROR] File not found: '{args.filename}'. Please check the path and try again.")
+        sys.exit(1)

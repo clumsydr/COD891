@@ -3,4 +3,5 @@
 speedtest/speedtest
 *.qmdl
 *.png
+*.xlsx
 .venv
