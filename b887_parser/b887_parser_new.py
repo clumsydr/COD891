@@ -8,8 +8,8 @@ Supports two confirmed structure versions based on the Major version field:
 ┌──────────┬──────────────────────────────────────────────────────────────────┐
 │          │  Version 2 (Major=2)          Version 3 (Major=3)               │
 ├──────────┼──────────────────────────────────────────────────────────────────┤
-│ Rec len  │  28 bytes                     24 bytes                          │
-│ Rec hdr  │  10 bytes                     2 bytes                           │
+│ Rec len  │  28 bytes                     32 bytes                          │
+│ Rec hdr  │  10 bytes                     10 bytes                           │
 │ Entry    │  18 bytes                     22 bytes (4 BMask-extra at end)   │
 ├──────────┼──────────────────────────────────────────────────────────────────┤
 │ Slot     │  rec[0]  uint8                TBD (rec hdr shorter)             │
@@ -103,7 +103,7 @@ def extract_entry_fields(entry: bytes) -> Tuple[int, int, int, int, int, int, in
     return pci, nr_arfcn, tb_size, mcs, num_rbs, harq_id, k1
 
 # ── Per-version record parsers ────────────────────────────────────────────────
-def parse_record_v2(rec: bytes, payload_idx: int, rec_idx: int, version: int) -> PdschRecord:
+def parse_record(rec: bytes, payload_idx: int, rec_idx: int, version: int) -> PdschRecord:
     """Parse a 28-byte version-2 record."""
     slot       = rec[0]
     mu         = rec[1]
@@ -119,19 +119,19 @@ def parse_record_v2(rec: bytes, payload_idx: int, rec_idx: int, version: int) ->
         tb_size=tb, mcs=mcs, num_rbs=rbs, harq_id=harq, k1=k1,
     )
 
-def parse_record_v3(rec: bytes, payload_idx: int, rec_idx: int) -> PdschRecord:
-    """
-    Parse a 24-byte version-3 record.
-    Header fields (slot, frame, SCS, carrier) have not yet been mapped
-    for v3 — they are returned as None pending further samples.
-    """
-    entry = rec[V3_REC_HDR_LEN:]
-    tb, mcs, rbs, harq, k1 = extract_entry_fields(entry)
-    return PdschRecord(
-        payload_idx=payload_idx, record_idx=rec_idx, version=3,
-        slot=None, frame=None, scs=None, carrier_id=None,
-        tb_size=tb, mcs=mcs, num_rbs=rbs, harq_id=harq, k1=k1,
-    )
+# def parse_record_v3(rec: bytes, payload_idx: int, rec_idx: int) -> PdschRecord:
+#     """
+#     Parse a 24-byte version-3 record.
+#     Header fields (slot, frame, SCS, carrier) have not yet been mapped
+#     for v3 — they are returned as None pending further samples.
+#     """
+#     entry = rec[V3_REC_HDR_LEN:]
+#     tb, mcs, rbs, harq, k1 = extract_entry_fields(entry)
+#     return PdschRecord(
+#         payload_idx=payload_idx, record_idx=rec_idx, version=3,
+#         slot=None, frame=None, scs=None, carrier_id=None,
+#         tb_size=tb, mcs=mcs, num_rbs=rbs, harq_id=harq, k1=k1,
+#     )
 
 # ── Payload parser ────────────────────────────────────────────────────────────
 def parse_payload(payload: bytes, payload_idx: int) -> List[PdschRecord]:
@@ -143,7 +143,6 @@ def parse_payload(payload: bytes, payload_idx: int) -> List[PdschRecord]:
     major = version_word >> 16
 
     RECORDS_START = 0
-    parse_rec = parse_record_v2 # beep
     if major == 2:
         rec_len     = V2_REC_LEN       # 28
         RECORDS_START = 27
@@ -176,7 +175,7 @@ def parse_payload(payload: bytes, payload_idx: int) -> List[PdschRecord]:
         rec  = payload[base : base + rec_len]
         if len(rec) < rec_len:
             break
-        results.append(parse_rec(rec, payload_idx, rec_idx, major))
+        results.append(parse_record(rec, payload_idx, rec_idx, major))
     return results
 
 # ── Stream splitter ───────────────────────────────────────────────────────────
