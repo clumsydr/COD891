@@ -12,9 +12,9 @@ Supports two confirmed structure versions based on the Major version field:
 │ Rec hdr  │  10 bytes                     10 bytes                           │
 │ Entry    │  18 bytes                     22 bytes (4 BMask-extra at end)    │
 ├──────────┼──────────────────────────────────────────────────────────────────┤
-│ Slot     │  rec[0]  uint8                TBD (rec hdr shorter)              │
-│ SCS mu   │  rec[1]  bits[2:0] or uint8   TBD                                │
-│ Frame    │  rec[2-3] uint16 LE           TBD                                │
+│ Slot     │  rec[0]  uint8               rec[0]                     ✓same    │
+│ SCS mu   │  rec[1] bits[2:0] or uint8   rec[1]                     ✓same    │
+│ Frame    │  rec[2-3] uint16 LE          rec[2-3] uint16 LE         ✓same    │
 | pci      |  entry[2-3] &0x3FF           entry[2-3] &0x3FF          ✓same    |
 | nr_arfcn |  entry[3-6] (>>2)&0x3FFFFF   entry[3-6] (>>2)&0x3FFFFF  ✓same    |
 │ TB Size  │  entry[6-8] (>>5)&0x1FFFF    entry[6-8] (>>5)&0x1FFFF   ✓same    │
