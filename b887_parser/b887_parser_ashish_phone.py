@@ -6,11 +6,10 @@ Extracts MCS and other key fields from 0xB887 log payloads.
 
 Verified field layout (28 bytes per record, starting at payload offset 28):
   [0]     Slot (uint8)
+  [1]     Numerology/BW byte — lower 3 bits = SCS mu
   [2-3]   Frame (uint16 LE)
-  [4]     Num PDSCH entries (uint8)
-  [5]     Carrier ID (uint8)
-  [8]     Conn ID (uint8)
-  [9]     Numerology/BW byte — lower 3 bits = SCS mu
+  [12-13] pci      - u16(r, 12) & 0x3FF
+  [13-16] nr_arfcn - (u32(r, 13) >> 2) & 0x3FFFFF
   [16-18] TB Size — (uint32 LE >> 5) & 0x1FFFF
   [19-20] MCS    — (uint16 LE >> 2) & 0x1F       *** primary field ***
   [20-21] Num RBs— uint16 LE & 0x1FF
@@ -198,8 +197,8 @@ def print_results(results: List[PdschRecord]):
         print("No B887 records found.")
         return
 
-    COL = ("Pkt","Rec","Slot","Frame","SCS","CID", "Phy Cell ID", "NR-ARFCN", "TB Size","MCS","Num RBs","HARQ","K1")
-    FMT = "{:>4}  {:>4}  {:>5}  {:>6}  {:>7}  {:>4} {:>7} {:>10}  {:>8}  {:>4}  {:>8}  {:>5}  {:>4}"
+    COL = ("Pkt","Rec","Slot","Frame","SCS","Phy Cell ID","NR-ARFCN","TB Size","MCS","Num RBs","HARQ","K1")
+    FMT = "{:>4}  {:>4}  {:>5}  {:>6}  {:>6} {:>7} {:>10}  {:>8}  {:>4}  {:>8}  {:>5}  {:>4}"
     SEP = "=" * 76
 
     print(f"\n{SEP}")
@@ -210,7 +209,7 @@ def print_results(results: List[PdschRecord]):
     for r in results:
         print("  " + FMT.format(
             r.payload_idx, r.record_idx, r.slot, r.frame,
-            r.scs, r.carrier_id, r.pci, r.nr_arfcn, r.tb_size, r.mcs,
+            r.scs, r.pci, r.nr_arfcn, r.tb_size, r.mcs,
             r.num_rbs, r.harq_id, r.k1))
 
     mcs_vals = [r.mcs for r in results]

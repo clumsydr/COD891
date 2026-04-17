@@ -1,20 +1,46 @@
-Parsing 'TarunPhoneLogs/WebBrowsing/payloads.txt' (1208 lines detected)...
-Total valid 32-byte records extracted: 2204
+Parsing 'TarunPhoneLogs/VideoStreaming/payloads.txt' (3745 lines detected)...
+Total valid 32-byte records extracted: 7714
 
 =======================================================
- BITS THAT NEVER CHANGED FROM '1' ACROSS ALL PAYLOADS
+ BITS THAT NEVER CHANGED FROM '1' (Always-One Mask)
 =======================================================
 Byte 01 | Hex: 0x01 | Binary: 00000001
-Byte 08 | Hex: 0x01 | Binary: 00000001
-Byte 11 | Hex: 0x18 | Binary: 00011000
-Byte 12 | Hex: 0xF6 | Binary: 11110110
-Byte 13 | Hex: 0x81 | Binary: 10000001
-Byte 14 | Hex: 0xB3 | Binary: 10110011
-Byte 15 | Hex: 0x26 | Binary: 00100110
-Byte 18 | Hex: 0x80 | Binary: 10000000
-Byte 26 | Hex: 0x21 | Binary: 00100001
+Byte 11 | Hex: 0x08 | Binary: 00001000
+Byte 12 | Hex: 0xF0 | Binary: 11110000
+Byte 15 | Hex: 0x22 | Binary: 00100010
+Byte 26 | Hex: 0x01 | Binary: 00000001
 Byte 29 | Hex: 0x20 | Binary: 00100000
 Byte 31 | Hex: 0x04 | Binary: 00000100
+Full Mask (Hex): 00 01 00 00 00 00 00 00 00 00 00 08 F0 00 00 22 00 00 00 00 00 00 00 00 00 00 01 00 00 20 00 04
 
-Full 32-Byte Static-One Mask (Hex):
-00 01 00 00 00 00 00 00 01 00 00 18 F6 81 B3 26 00 00 80 00 00 00 00 00 00 00 21 00 00 20 00 04
+=======================================================
+ BITS THAT NEVER CHANGED FROM '0' (Always-Zero Mask)
+=======================================================
+Note: The binary '1's printed below highlight where the bits remained '0'.
+
+Byte 00 | Hex: 0xE0 | Binary: 11100000
+Byte 01 | Hex: 0xFE | Binary: 11111110
+Byte 03 | Hex: 0xE4 | Binary: 11100100
+Byte 04 | Hex: 0x08 | Binary: 00001000
+Byte 05 | Hex: 0x7E | Binary: 01111110
+Byte 06 | Hex: 0x4C | Binary: 01001100
+Byte 07 | Hex: 0xD9 | Binary: 11011001
+Byte 08 | Hex: 0xDE | Binary: 11011110
+Byte 11 | Hex: 0xC3 | Binary: 11000011
+Byte 12 | Hex: 0x01 | Binary: 00000001
+Byte 13 | Hex: 0x66 | Binary: 01100110
+Byte 14 | Hex: 0x4C | Binary: 01001100
+Byte 15 | Hex: 0xD8 | Binary: 11011000
+Byte 16 | Hex: 0x18 | Binary: 00011000
+Byte 19 | Hex: 0x83 | Binary: 10000011
+Byte 22 | Hex: 0x2F | Binary: 00101111
+Byte 23 | Hex: 0xC0 | Binary: 11000000
+Byte 24 | Hex: 0x20 | Binary: 00100000
+Byte 25 | Hex: 0x78 | Binary: 01111000
+Byte 26 | Hex: 0x92 | Binary: 10010010
+Byte 27 | Hex: 0xFC | Binary: 11111100
+Byte 29 | Hex: 0x10 | Binary: 00010000
+Byte 30 | Hex: 0xFD | Binary: 11111101
+Byte 31 | Hex: 0xE1 | Binary: 11100001
+Full Mask (Hex): E0 FE 00 E4 08 7E 4C D9 DE 00 00 C3 01 66 4C D8 18 00 00 83 00 00 2F C0 20 78 92 FC 00 10 FD E1
+

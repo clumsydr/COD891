@@ -84,8 +84,8 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser(description="Parse 0xB887 NR5G PDSCH payloads (v2 + v3).")
     ap.add_argument("input", nargs="?", help="Hex text file (stdin if omitted)")
     ap.add_argument("output_dir", nargs="?", help="Output directory")
-    ap.add_argument("record_count_index", default=28, nargs="?")
-    ap.add_argument("record_length", default=32)
+    ap.add_argument("--record_count_index", default=28, nargs="?")
+    ap.add_argument("--record_length", default=32)
     args = ap.parse_args()
 
     plot_byte_trends_batched(args.input, args.output_dir, int(args.record_count_index), int(args.record_length))

@@ -6,21 +6,22 @@ Extracts MCS and other key fields from 0xB887 log payloads.
 Supports two confirmed structure versions based on the Major version field:
 
 ┌──────────┬──────────────────────────────────────────────────────────────────┐
-│          │  Version 2 (Major=2)          Version 3 (Major=3)               │
+│          │  Version 2 (Major=2)          Version 3 (Major=3)                │
 ├──────────┼──────────────────────────────────────────────────────────────────┤
-│ Rec len  │  28 bytes                     32 bytes                          │
+│ Rec len  │  28 bytes                     32 bytes                           │
 │ Rec hdr  │  10 bytes                     10 bytes                           │
-│ Entry    │  18 bytes                     22 bytes (4 BMask-extra at end)   │
+│ Entry    │  18 bytes                     22 bytes (4 BMask-extra at end)    │
 ├──────────┼──────────────────────────────────────────────────────────────────┤
-│ Slot     │  rec[0]  uint8                TBD (rec hdr shorter)             │
-│ Frame    │  rec[2-3] uint16 LE           TBD                               │
-│ Carrier  │  rec[5]  uint8                TBD                               │
-│ SCS mu   │  rec[9]  bits[2:0]            TBD                               │
-│ TB Size  │  entry[6-8] (>>5)&0x1FFFF    entry[6-8] (>>5)&0x1FFFF  ✓same  │
-│ MCS      │  entry[9-10] (>>2)&0x1F      entry[9-10] (>>2)&0x1F    ✓same  │
-│ Num RBs  │  entry[10-11] &0x1FF         entry[10-11] &0x1FF        ✓same  │
-│ HARQ ID  │  entry[11]   (>>3)&0xF       entry[11]   (>>3)&0xF      ✓same  │
-│ K1       │  entry[12-13](>>6)&0xF       entry[12-13](>>6)&0xF      ✓same  │
+│ Slot     │  rec[0]  uint8                TBD (rec hdr shorter)              │
+│ SCS mu   │  rec[1]  bits[2:0] or uint8   TBD                                │
+│ Frame    │  rec[2-3] uint16 LE           TBD                                │
+| pci      |  entry[2-3] &0x3FF           entry[2-3] &0x3FF          ✓same    |
+| nr_arfcn |  entry[3-6] (>>2)&0x3FFFFF   entry[3-6] (>>2)&0x3FFFFF  ✓same    |
+│ TB Size  │  entry[6-8] (>>5)&0x1FFFF    entry[6-8] (>>5)&0x1FFFF   ✓same    │
+│ MCS      │  entry[9-10] (>>2)&0x1F      entry[9-10] (>>2)&0x1F     ✓same    │
+│ Num RBs  │  entry[10-11] &0x1FF         entry[10-11] &0x1FF        ✓same    │
+│ HARQ ID  │  entry[11]   (>>3)&0xF       entry[11]   (>>3)&0xF      ✓same    │
+│ K1       │  entry[12-13](>>6)&0xF       entry[12-13](>>6)&0xF      ✓same    │
 └──────────┴──────────────────────────────────────────────────────────────────┘
 
 NOTE: The outer framing (how the stream arrives) may include a DIAG framing
