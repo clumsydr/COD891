@@ -1,8 +1,8 @@
 DIRECTORY=AshishPhoneLogs/NoActivity
 FILE=payloads
 
-# DIRECTORY=TarunPhoneLogs/WebBrowsing
-# FILE=payloads
+DIRECTORY=TarunPhoneLogs/WebBrowsing
+FILE=payloads
 
 ptr:
 	python3 packet_to_record.py $(DIRECTORY)/$(FILE).txt $(DIRECTORY)/$(FILE)_records.txt 36 28
