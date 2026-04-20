@@ -46,7 +46,7 @@ echo -e "${YELLOW}[*]${NC} Starting DIAG router service..."
 adb shell su -c 'start vendor.diag-router' >/dev/null 2>&1
 sleep 1
 
-if ! adb shell getprop init.svc.vendor.diag-router | grep -q "running"; then
+if ! adb shell su -c "getprop init.svc.vendor.diag-router | grep -q "running""; then
     echo -e "${RED}[✗]${NC} Failed to start DIAG router service"
     exit 1
 fi
