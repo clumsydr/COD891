@@ -3,7 +3,7 @@
 # DIAG Capture Script for OnePlus 11R
 # Simple wrapper around diag_mdlog and tcpdump
 #
-# Usage: ./capture_diag.sh [duration_seconds] [output_dir]
+# Usage: bash capture_diag.sh [duration_seconds] [output_dir]
 #
 
 set -e
