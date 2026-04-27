@@ -1,7 +1,6 @@
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy import signal
 from scapy.all import PcapReader
 
 def u16(b, o): return b[o] | (b[o+1] << 8)
@@ -24,15 +23,46 @@ def extract_rbs_sequence(payload_file):
                 pass
     return np.array(rb_sequence)
 
-def extract_pcap_sequence(pcap_file):
+def extract_and_group_pcap(pcap_file, num_bins):
     """
-    Extracts purely the sequential list of packet lengths.
+    Extracts packets from the PCAP, calculates the total duration, 
+    divides the time evenly into `num_bins`, and sums the packet lengths 
+    falling into each time bucket.
     """
-    pcap_sequence = []
+    pkt_times = []
+    pkt_lengths = []
+    
     with PcapReader(pcap_file) as pcap_reader:
         for pkt in pcap_reader:
-            pcap_sequence.append(len(pkt))
-    return np.array(pcap_sequence)
+            pkt_times.append(float(pkt.time))
+            pkt_lengths.append(len(pkt))
+            
+    if not pkt_times:
+        return np.zeros(num_bins)
+        
+    t_start = min(pkt_times)
+    t_end = max(pkt_times)
+    total_duration = t_end - t_start
+    
+    # Initialize our buckets with zeros
+    pcap_grouped = np.zeros(num_bins)
+    
+    if total_duration == 0 or num_bins == 0:
+        # If the capture happened in exactly 0 seconds, dump it all in the first bin
+        if num_bins > 0:
+            pcap_grouped[0] = sum(pkt_lengths)
+        return pcap_grouped
+
+    time_per_bin = total_duration / num_bins
+    
+    # Sort packets into their respective time buckets
+    for t, l in zip(pkt_times, pkt_lengths):
+        bin_idx = int((t - t_start) / time_per_bin)
+        # Cap the index to prevent an IndexError for the very last packet
+        bin_idx = min(bin_idx, num_bins - 1)
+        pcap_grouped[bin_idx] += l
+        
+    return pcap_grouped
 
 def main():
     if len(sys.argv) < 3:
@@ -42,41 +72,54 @@ def main():
     payload_file = sys.argv[1]
     pcap_file = sys.argv[2]
     
-    print("Extracting sequences...")
+    print("Extracting MAC sequence...")
     rb_seq = extract_rbs_sequence(payload_file)
-    pcap_seq = extract_pcap_sequence(pcap_file)
+    num_mac_records = len(rb_seq)
     
-    if len(rb_seq) == 0 or len(pcap_seq) == 0:
-        print("Error: One of the datasets is empty.")
+    if num_mac_records == 0:
+        print("Error: The radio payload dataset is empty.")
+        return
+        
+    print(f"Original MAC records:  {num_mac_records}")
+    print(f"Grouping PCAP into {num_mac_records} time-based bins...")
+    
+    pcap_grouped = extract_and_group_pcap(pcap_file, num_mac_records)
+    
+    if len(pcap_grouped) == 0 or np.sum(pcap_grouped) == 0:
+        print("Error: The PCAP dataset is empty or contains no length data.")
         return
 
-    print(f"Original PCAP packets: {len(pcap_seq)}")
-    print(f"Original MAC records:  {len(rb_seq)}")
-
-    # Force the PCAP sequence to match the length of the RB sequence using signal resampling
-    print("\nResampling PCAP data to match radio log length...")
-    pcap_resampled = signal.resample(pcap_seq, len(rb_seq))
-
-    # Calculate Pearson Correlation on the aligned sequences
-    correlation = np.corrcoef(pcap_resampled, rb_seq)[0, 1]
-    print(f"\n📊 Sequence Correlation Coefficient: {correlation:.4f}")
-    
-    if correlation > 0.6:
-        print("   -> Strong correlation! The data bursts share a highly similar structural shape.")
-    elif correlation < 0.2 and correlation > -0.2:
-        print("   -> No correlation. The shapes of the traffic do not align sequentially.")
+    # Variance Check to prevent flat-line crashes
+    if np.std(pcap_grouped) == 0 or np.std(rb_seq) == 0:
+        print("\n⚠️ Zero Variance Detected")
+        print("One or both datasets consist of a completely constant value (no spikes or drops).")
+        print("Because this is a 'flat line', mathematical correlation cannot be calculated.")
+        correlation = 0.0
+    else:
+        # Calculate Pearson Correlation safely
+        correlation = np.corrcoef(pcap_grouped, rb_seq)[0, 1]
+        print(f"\n📊 Time-Grouped Correlation Coefficient: {correlation:.4f}")
+        
+        if correlation > 0.6:
+            print("   -> Strong correlation! Traffic buckets align closely with RB allocations.")
+        elif -0.2 <= correlation <= 0.2:
+            print("   -> No correlation. The shapes of the grouped traffic do not align.")
 
     # Normalize data for plotting so they fit on the same scale (0 to 1)
-    pcap_norm = (pcap_resampled - np.min(pcap_resampled)) / (np.ptp(pcap_resampled) or 1)
+    pcap_norm = (pcap_grouped - np.min(pcap_grouped)) / (np.ptp(pcap_grouped) or 1)
     rb_norm = (rb_seq - np.min(rb_seq)) / (np.ptp(rb_seq) or 1)
 
     # Plotting
     plt.figure(figsize=(12, 5))
-    plt.plot(pcap_norm, label='PCAP Lengths (Resampled & Normalized)', alpha=0.8)
-    plt.plot(rb_norm, label='Radio RBs (Normalized)', linestyle='dashed', alpha=0.8)
+    plt.plot(pcap_norm, label='Grouped PCAP Lengths (Normalized)', alpha=0.8, color='tab:blue')
+    plt.plot(rb_norm, label='Radio RBs (Normalized)', linestyle='dashed', alpha=0.8, color='tab:red')
     
-    plt.title(f"Sequential Shape Alignment (Time Ignored) - Correlation: {correlation:.2f}")
-    plt.xlabel('Sequential Event Index (Forced Alignment)')
+    if np.std(pcap_grouped) == 0 or np.std(rb_seq) == 0:
+        plt.title("Time-Grouped Alignment - ZERO VARIANCE (Flatline)")
+    else:
+        plt.title(f"Time-Grouped Alignment - Correlation: {correlation:.2f}")
+        
+    plt.xlabel('Time Buckets (Sequence Index)')
     plt.ylabel('Normalized Magnitude')
     plt.legend()
     plt.tight_layout()
