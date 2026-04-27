@@ -3,6 +3,7 @@
 DIRECTORY=VerificationLogs/SpeedTest
 FILE=payloads
 
+INDEX=2
 INFILE=SpeedTest
 INDIRECTORY=../loggers/Logs/$(INFILE)
 FINALDIRECTORY=VerificationLogs/$(INFILE)
@@ -26,8 +27,8 @@ work:
 	python3 work.py $(DIRECTORY)/control.txt > work.txt
 
 packets:
-	scat -t qc -d $(INDIRECTORY)$(INDEX)/*.qmdl > $(FINALDIRECTORY)/$(INFILE).txt
-	python3 qmdl-to-codes.py $(FINALDIRECTORY)/$(INFILE).txt $(FINALDIRECTORY)/$(FILE)$(INDEX).txt
+	scat -t qc -d $(INDIRECTORY)$(INDEX)/*.qmdl > $(FINALDIRECTORY)/$(INFILE)$(INDEX).txt
+	python3 qmdl-to-codes.py $(FINALDIRECTORY)/$(INFILE)$(INDEX).txt $(FINALDIRECTORY)/$(FILE)$(INDEX).txt -download=0
 
 STAGES = 1 2 3 4
 run_packets:
@@ -36,4 +37,4 @@ run_packets:
 	done
 
 correlation:
-	python3 sequence_correlator.py $(FINALDIRECTORY)/$(FILE).txt $(INDIRECTORY)/*.pcap
+	python3 sequence_correlator.py $(FINALDIRECTORY)/$(FILE)$(INDEX).txt $(INDIRECTORY)$(INDEX)/*.pcap dl

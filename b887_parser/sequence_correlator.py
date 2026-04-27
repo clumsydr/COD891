@@ -82,12 +82,20 @@ def extract_pcap_split(pcap_file, device_ip):
     return np.array(dl_records), np.array(ul_records)
 
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: python sequence_correlator.py <payloads.txt> <capture.pcap>")
+    if len(sys.argv) < 4:
+        print("Usage: python sequence_correlator.py <payloads.txt> <capture.pcap> <downlink|uplink>")
         sys.exit(1)
         
     payload_file = sys.argv[1]
     pcap_file = sys.argv[2]
+    channel_type = sys.argv[3].lower()
+    
+    if channel_type not in ['downlink', 'dl', 'uplink', 'ul']:
+        print("Error: The third argument must be either 'downlink' or 'uplink'.")
+        sys.exit(1)
+        
+    is_downlink = channel_type in ['downlink', 'dl']
+    target_name = "Download" if is_downlink else "Upload"
     
     print("Analyzing PCAP to determine device IP...")
     device_ip = guess_device_ip(pcap_file)
@@ -107,7 +115,7 @@ def main():
         print("Error: The PCAP dataset contains no IP traffic.")
         return
 
-    print(f"Extracted {len(dl_data)} Download pkts, {len(ul_data)} Upload pkts, and {len(rb_data)} MAC PDSCH records.")
+    print(f"Extracted {len(dl_data)} Download pkts, {len(ul_data)} Upload pkts, and {len(rb_data)} MAC records.")
 
     # Determine the overlapping global time window
     min_time = min(np.min(rb_data[:, 0]) if len(rb_data) else float('inf'), 
@@ -127,18 +135,21 @@ def main():
     dl_binned, _ = np.histogram(dl_data[:, 0], bins=bins, weights=dl_data[:, 1]) if len(dl_data) else (np.zeros(len(bins)-1), bins)
     ul_binned, _ = np.histogram(ul_data[:, 0], bins=bins, weights=ul_data[:, 1]) if len(ul_data) else (np.zeros(len(bins)-1), bins)
 
+    # Select the target PCAP sequence based on user argument
+    target_binned = dl_binned if is_downlink else ul_binned
+
     correlation = 0.0
-    if np.std(dl_binned) != 0 and np.std(rb_binned) != 0:
-        # Calculate Pearson Correlation on Download ONLY
-        correlation = np.corrcoef(dl_binned, rb_binned)[0, 1]
-        print(f"\n📊 PDSCH to Download PCAP Correlation: {correlation:.4f}")
+    if np.std(target_binned) != 0 and np.std(rb_binned) != 0:
+        # Calculate Pearson Correlation on the selected channel
+        correlation = np.corrcoef(target_binned, rb_binned)[0, 1]
+        print(f"\n📊 Radio Allocation to {target_name} PCAP Correlation: {correlation:.4f}")
         
         if correlation > 0.6:
-            print("   -> Strong correlation! Download traffic matches Downlink RBs.")
+            print(f"   -> Strong correlation! {target_name} traffic matches Radio RBs.")
         elif -0.2 <= correlation <= 0.2:
             print("   -> No correlation. The traffic and radio logs do not align in time.")
     else:
-        print("\n⚠️ Zero Variance Detected in Downlink or RB binned data (Flatline).")
+        print(f"\n⚠️ Zero Variance Detected in {target_name} or RB binned data (Flatline).")
 
     # Normalize data for plotting
     dl_norm = (dl_binned - np.min(dl_binned)) / (np.ptp(dl_binned) or 1)
@@ -149,11 +160,12 @@ def main():
     plt.figure(figsize=(12, 5))
     time_axis = bins[:-1] - min_time
     
-    plt.plot(time_axis, dl_norm, label='PCAP Download (Normalized)', alpha=0.8, color='tab:blue')
-    plt.plot(time_axis, ul_norm, label='PCAP Upload (Normalized)', alpha=0.5, color='tab:orange', linestyle='dotted')
-    plt.plot(time_axis, rb_norm, label='Radio PDSCH RBs (Normalized)', linestyle='dashed', alpha=0.8, color='tab:red')
+    # Plot both DL and UL for context, but highlight the chosen one in the legend
+    plt.plot(time_axis, dl_norm, label='PCAP Download (Normalized)', alpha=0.8 if is_downlink else 0.3, color='tab:blue', linestyle='solid' if is_downlink else 'dotted')
+    plt.plot(time_axis, ul_norm, label='PCAP Upload (Normalized)', alpha=0.8 if not is_downlink else 0.3, color='tab:orange', linestyle='solid' if not is_downlink else 'dotted')
+    plt.plot(time_axis, rb_norm, label='Radio RBs (Normalized)', linestyle='dashed', alpha=0.8, color='tab:red')
     
-    plt.title(f"Separated Traffic Alignment - Download Correlation: {correlation:.2f}")
+    plt.title(f"{target_name} Traffic Alignment - Correlation: {correlation:.2f}")
         
     plt.xlabel(f'Time (Seconds from capture start) [{BIN_SIZE_SEC}s bins]')
     plt.ylabel('Normalized Magnitude')
