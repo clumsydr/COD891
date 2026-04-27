@@ -1,6 +1,6 @@
-# DIRECTORY=AshishPhoneLogs/NoActivity
+# DIRECTORY=AshishPhoneLogs/VideoStreaming
 # DIRECTORY=TarunPhoneLogs/WebBrowsing
-DIRECTORY=VerificationLogs/NoActivity
+# DIRECTORY=VerificationLogs/NoActivity
 FILE=payloads
 
 INFILE=SpeedTest
@@ -18,6 +18,9 @@ parse_old:
 
 parse:
 	python3 b887_parser_new.py $(DIRECTORY)/$(FILE).txt > $(DIRECTORY)/$(FILE)_parsed_new.txt
+
+parse_w_time:
+	python3 b887_parser_new_w_time.py $(DIRECTORY)/$(FILE).txt > $(DIRECTORY)/$(FILE)_parsed_new_w_time.txt
 
 unchanging:
 	python3 unchanging.py $(DIRECTORY)/$(FILE).txt --header=29 --record=32 --offset=28 > unchanging.txt
