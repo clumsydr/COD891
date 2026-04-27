@@ -2,28 +2,26 @@ import sys
 import datetime
 import numpy as np
 import matplotlib.pyplot as plt
-from scapy.all import PcapReader
+from collections import Counter
+from scapy.all import PcapReader, IP, IPv6
 
 def u16(b, o): return b[o] | (b[o+1] << 8)
 
 def parse_qxdm_time(ts_bytes):
     """
     Converts the 8-byte QXDM hardware timestamp into a standard UNIX epoch float.
-    Upper 48 bits = ticks, Lower 16 bits = fractional. 1 tick = 1.25 ms.
     """
     ts_int = int.from_bytes(ts_bytes, byteorder='little')
     integer_ticks = ts_int >> 16
     fractional_ticks = (ts_int & 0xFFFF) / 65536.0
     time_seconds = (integer_ticks + fractional_ticks) * 1.25 / 1000.0
     
-    # FIX: Make the epoch timezone-aware (UTC) so .timestamp() yields standard UNIX epoch
     cdma_epoch = datetime.datetime(1980, 1, 6, tzinfo=datetime.timezone.utc)
-    
     return (cdma_epoch + datetime.timedelta(seconds=time_seconds)).timestamp()
 
 def extract_rbs_with_time(payload_file):
     """
-    Extracts tuples of (timestamp, num_rbs) using the exact hardware timestamp.
+    Extracts tuples of (timestamp, num_rbs) representing RBs.
     """
     records = []
     with open(payload_file, 'r') as f:
@@ -31,11 +29,9 @@ def extract_rbs_with_time(payload_file):
             tokens = line.strip().split()
             try:
                 raw = bytes(int(t, 16) for t in tokens)
-                # Extract 8-byte timestamp
                 ts_bytes = raw[13:21]
                 pkt_time = parse_qxdm_time(ts_bytes)
                 
-                # Retaining your original RB extraction logic
                 for j in range(raw[28]):
                     entry_start = 29 + j*32
                     num_rbs = u16(raw, entry_start + 20) & 0x1FF
@@ -44,15 +40,46 @@ def extract_rbs_with_time(payload_file):
                 pass
     return np.array(records)
 
-def extract_pcap_with_time(pcap_file):
+def guess_device_ip(pcap_file):
     """
-    Extracts tuples of (timestamp, packet_length).
+    Scans the PCAP to find the most common IP address, assuming it belongs to the capturing device.
     """
-    records = []
+    ips = []
     with PcapReader(pcap_file) as pcap_reader:
         for pkt in pcap_reader:
-            records.append((float(pkt.time), len(pkt)))
-    return np.array(records)
+            if IP in pkt:
+                ips.extend([pkt[IP].src, pkt[IP].dst])
+            elif IPv6 in pkt:
+                ips.extend([pkt[IPv6].src, pkt[IPv6].dst])
+                
+    if not ips:
+        return None
+    return Counter(ips).most_common(1)[0][0]
+
+def extract_pcap_split(pcap_file, device_ip):
+    """
+    Extracts packets and splits them by comparing the IP to the device's IP.
+    """
+    dl_records = []
+    ul_records = []
+    
+    with PcapReader(pcap_file) as pcap_reader:
+        for pkt in pcap_reader:
+            src, dst = None, None
+            if IP in pkt:
+                src, dst = pkt[IP].src, pkt[IP].dst
+            elif IPv6 in pkt:
+                src, dst = pkt[IPv6].src, pkt[IPv6].dst
+            else:
+                continue # Skip non-IP traffic (like ARP)
+
+            # Route to correct bucket based on IP
+            if dst == device_ip:
+                dl_records.append((float(pkt.time), len(pkt)))
+            elif src == device_ip:
+                ul_records.append((float(pkt.time), len(pkt)))
+                
+    return np.array(dl_records), np.array(ul_records)
 
 def main():
     if len(sys.argv) < 3:
@@ -62,66 +89,71 @@ def main():
     payload_file = sys.argv[1]
     pcap_file = sys.argv[2]
     
+    print("Analyzing PCAP to determine device IP...")
+    device_ip = guess_device_ip(pcap_file)
+    if not device_ip:
+        print("Error: Could not find any valid IPv4 or IPv6 traffic in the PCAP.")
+        return
+    print(f"Device IP determined as: {device_ip}")
+    
     print("Extracting time-series sequences...")
     rb_data = extract_rbs_with_time(payload_file)
-    pcap_data = extract_pcap_with_time(pcap_file)
+    dl_data, ul_data = extract_pcap_split(pcap_file, device_ip)
     
-    if len(rb_data) == 0 or len(pcap_data) == 0:
-        print("Error: One of the datasets is empty.")
+    if len(rb_data) == 0:
+        print("Error: The radio log dataset is empty.")
+        return
+    if len(dl_data) == 0 and len(ul_data) == 0:
+        print("Error: The PCAP dataset contains no IP traffic.")
         return
 
-    print(f"Extracted {len(pcap_data)} PCAP packets and {len(rb_data)} MAC records.")
+    print(f"Extracted {len(dl_data)} Download pkts, {len(ul_data)} Upload pkts, and {len(rb_data)} MAC PDSCH records.")
 
     # Determine the overlapping global time window
-    min_time = min(np.min(rb_data[:, 0]), np.min(pcap_data[:, 0]))
-    max_time = max(np.max(rb_data[:, 0]), np.max(pcap_data[:, 0]))
+    min_time = min(np.min(rb_data[:, 0]) if len(rb_data) else float('inf'), 
+                   np.min(dl_data[:, 0]) if len(dl_data) else float('inf'),
+                   np.min(ul_data[:, 0]) if len(ul_data) else float('inf'))
+                   
+    max_time = max(np.max(rb_data[:, 0]) if len(rb_data) else 0, 
+                   np.max(dl_data[:, 0]) if len(dl_data) else 0,
+                   np.max(ul_data[:, 0]) if len(ul_data) else 0)
     
-    # Catch massive time disparities (e.g., captures taken days apart)
-    time_diff = abs(np.min(rb_data[:, 0]) - np.min(pcap_data[:, 0]))
-    if time_diff > 3600:
-        print(f"\n⚠️ Warning: Datasets start {time_diff / 3600:.2f} hours apart. Overlap correlation will likely fail.")
-
-    # Group into fixed time bins (1.0 second bins)
     BIN_SIZE_SEC = 1.0
     print(f"Grouping data into {BIN_SIZE_SEC}-second time bins...")
-    
     bins = np.arange(min_time, max_time + BIN_SIZE_SEC, BIN_SIZE_SEC)
     
-    # Use histogram to bucket timestamps and sum their respective weights (RBs or Lengths)
-    rb_binned, _ = np.histogram(rb_data[:, 0], bins=bins, weights=rb_data[:, 1])
-    pcap_binned, _ = np.histogram(pcap_data[:, 0], bins=bins, weights=pcap_data[:, 1])
+    # Use histogram to bucket timestamps and sum weights
+    rb_binned, _ = np.histogram(rb_data[:, 0], bins=bins, weights=rb_data[:, 1]) if len(rb_data) else (np.zeros(len(bins)-1), bins)
+    dl_binned, _ = np.histogram(dl_data[:, 0], bins=bins, weights=dl_data[:, 1]) if len(dl_data) else (np.zeros(len(bins)-1), bins)
+    ul_binned, _ = np.histogram(ul_data[:, 0], bins=bins, weights=ul_data[:, 1]) if len(ul_data) else (np.zeros(len(bins)-1), bins)
 
-    # Variance Check
-    if np.std(pcap_binned) == 0 or np.std(rb_binned) == 0:
-        print("\n⚠️ Zero Variance Detected in binned data (Flatline).")
-        correlation = 0.0
-    else:
-        # Calculate Pearson Correlation on the time-aligned binned sequences
-        correlation = np.corrcoef(pcap_binned, rb_binned)[0, 1]
-        print(f"\n📊 Time-Aligned Correlation Coefficient: {correlation:.4f}")
+    correlation = 0.0
+    if np.std(dl_binned) != 0 and np.std(rb_binned) != 0:
+        # Calculate Pearson Correlation on Download ONLY
+        correlation = np.corrcoef(dl_binned, rb_binned)[0, 1]
+        print(f"\n📊 PDSCH to Download PCAP Correlation: {correlation:.4f}")
         
         if correlation > 0.6:
-            print("   -> Strong correlation! Spikes in PCAP traffic match allocated RBs over time.")
+            print("   -> Strong correlation! Download traffic matches Downlink RBs.")
         elif -0.2 <= correlation <= 0.2:
             print("   -> No correlation. The traffic and radio logs do not align in time.")
+    else:
+        print("\n⚠️ Zero Variance Detected in Downlink or RB binned data (Flatline).")
 
-    # Normalize data for plotting so they fit on the same visual scale (0 to 1)
-    pcap_norm = (pcap_binned - np.min(pcap_binned)) / (np.ptp(pcap_binned) or 1)
+    # Normalize data for plotting
+    dl_norm = (dl_binned - np.min(dl_binned)) / (np.ptp(dl_binned) or 1)
+    ul_norm = (ul_binned - np.min(ul_binned)) / (np.ptp(ul_binned) or 1)
     rb_norm = (rb_binned - np.min(rb_binned)) / (np.ptp(rb_binned) or 1)
 
     # Plotting
     plt.figure(figsize=(12, 5))
-    
-    # Plot using relative time from start of the captures
     time_axis = bins[:-1] - min_time
     
-    plt.plot(time_axis, pcap_norm, label='Grouped PCAP Lengths (Normalized)', alpha=0.8)
-    plt.plot(time_axis, rb_norm, label='Grouped Radio RBs (Normalized)', linestyle='dashed', alpha=0.8)
+    plt.plot(time_axis, dl_norm, label='PCAP Download (Normalized)', alpha=0.8, color='tab:blue')
+    plt.plot(time_axis, ul_norm, label='PCAP Upload (Normalized)', alpha=0.5, color='tab:orange', linestyle='dotted')
+    plt.plot(time_axis, rb_norm, label='Radio PDSCH RBs (Normalized)', linestyle='dashed', alpha=0.8, color='tab:red')
     
-    if np.std(pcap_binned) == 0 or np.std(rb_binned) == 0:
-        plt.title("Time-Aligned Data Grouping - ZERO VARIANCE (Flatline)")
-    else:
-        plt.title(f"Time-Aligned Data Grouping - Correlation: {correlation:.2f}")
+    plt.title(f"Separated Traffic Alignment - Download Correlation: {correlation:.2f}")
         
     plt.xlabel(f'Time (Seconds from capture start) [{BIN_SIZE_SEC}s bins]')
     plt.ylabel('Normalized Magnitude')

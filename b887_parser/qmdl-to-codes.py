@@ -4,14 +4,20 @@ import argparse
 ap = argparse.ArgumentParser(description="Parse raw into raw_packets")
 ap.add_argument("input", nargs="?", help="input text file")
 ap.add_argument("output", nargs="?", help="output text file ")
+ap.add_argument("-download", default=1)
 args = ap.parse_args()
 
 capture = False
 payload = []
+download = int(args.download)
 
 with open(args.input, "r") as f, open(args.output, "w") as out:
     for line in f:
-        if "Not parsing DIAG log item 0xb887" in line:
+        if (download) and ("Not parsing DIAG log item 0xb887" in line):
+            capture = True
+            payload = []
+            continue
+        elif (not download) and "Not parsing DIAG log item 0xb883" in line:
             capture = True
             payload = []
             continue
