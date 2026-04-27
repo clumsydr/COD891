@@ -1,8 +1,11 @@
-DIRECTORY=AshishPhoneLogs/NoActivity
+# DIRECTORY=AshishPhoneLogs/NoActivity
+# DIRECTORY=TarunPhoneLogs/WebBrowsing
+DIRECTORY=VerificationLogs/NoActivity
 FILE=payloads
 
-DIRECTORY=TarunPhoneLogs/WebBrowsing
-FILE=payloads
+INFILE=SpeedTest
+INDIRECTORY=../loggers/Logs/$(INFILE)
+FINALDIRECTORY=VerificationLogs/$(INFILE)
 
 ptr:
 	python3 packet_to_record.py $(DIRECTORY)/$(FILE).txt $(DIRECTORY)/$(FILE)_records.txt 36 28
@@ -21,3 +24,16 @@ unchanging:
 
 work:
 	python3 work.py $(DIRECTORY)/control.txt > work.txt
+
+packets:
+	scat -t qc -d $(INDIRECTORY)$(INDEX)/*.qmdl > $(FINALDIRECTORY)/$(INFILE).txt
+	python3 qmdl-to-codes.py $(FINALDIRECTORY)/$(INFILE).txt $(FINALDIRECTORY)/$(FILE)$(INDEX).txt
+
+STAGES = 1 2 3 4
+run_packets:
+	@for stage in $(STAGES); do \
+		make packets INDEX=$$stage; \
+	done
+
+correlation:
+	python3 sequence_correlator.py $(FINALDIRECTORY)/$(FILE).txt $(INDIRECTORY)/*.pcap

@@ -1,12 +1,15 @@
 import re
+import argparse
 
-input_file = "TarunPhoneLogs/VodaLogs/qmdl-to-scat-voda-4.txt"
-output_file = "TarunPhoneLogs/VodaLogs/voda4.txt"
+ap = argparse.ArgumentParser(description="Parse raw into raw_packets")
+ap.add_argument("input", nargs="?", help="input text file")
+ap.add_argument("output", nargs="?", help="output text file ")
+args = ap.parse_args()
 
 capture = False
 payload = []
 
-with open(input_file, "r") as f, open(output_file, "w") as out:
+with open(args.input, "r") as f, open(args.output, "w") as out:
     for line in f:
         if "Not parsing DIAG log item 0xb887" in line:
             capture = True
