@@ -14,8 +14,6 @@ def parse_qxdm_time(ts_bytes):
     ts_int = int.from_bytes(ts_bytes, byteorder='little')
     integer_ticks = ts_int >> 16
     fractional_ticks = (ts_int & 0xFFFF) / 65536.0
-
-    # Subtract 18 leap seconds to align GPS time with modern UTC
     time_seconds = (integer_ticks + fractional_ticks) * 1.25 / 1000.0
     
     # FIX: Make the epoch timezone-aware (UTC) so .timestamp() yields standard UNIX epoch
@@ -134,4 +132,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # extract_rbs_with_time(sys.argv[1])
