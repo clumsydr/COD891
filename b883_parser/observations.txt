@@ -1,0 +1,17 @@
+Slot: byte 1
+Numerology: lower 4 bits of byte 2
+Frame: lower 10 bits of byte 3 and 4
+
+Num Carrier: byte 5
+SKIP: bytes 6, 7, 8
+
+Carrier ID: lower 2 bits of byte 9
+RNTI Type: bit 2 to 5 of byte 9
+Phychan Bit Mask: bit 6 and 7 from byte 9 and lower four bits of byte 10
+    000010 == PUSCH
+	000100 == PUCCH
+    001000 == SRS
+    010000 == PRACH
+Dual Pol Status: bit 4 and 5 of byte 10
+SKIP: bytes 11, 12
+
