@@ -6,3 +6,4 @@ b887_parser/TarunPhoneLogs/VodaLogs/qmdl-to-scat-voda*.txt
 *.xlsx
 .venv
 loggers/Logs/*
+loggers/scheduled_captures/run_*

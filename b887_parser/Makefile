@@ -38,3 +38,27 @@ run_packets:
 
 correlation:
 	python3 sequence_correlator.py $(FINALDIRECTORY)/$(FILE)$(INDEX).txt $(INDIRECTORY)$(INDEX)/*.pcap dl
+
+
+CAPTURE_DIR = ../loggers/scheduled_captures
+process_all:
+	@echo "Scanning $(CAPTURE_DIR) for QMDL files..."
+	@for file in $$(find $(CAPTURE_DIR) -type f \( -name "*.qmdl" \)); do \
+		echo "=========================================="; \
+		echo "Processing: $$file"; \
+		DIR=$$(dirname "$$file"); \
+		BASENAME=$$(basename "$$file" | sed -E 's/\.qmdl2?//'); \
+		SCAT_TXT="$$DIR/$${BASENAME}_scat.txt"; \
+		PAYLOAD_TXT="$$DIR/$${BASENAME}_payloads.txt"; \
+		PARSED_TXT="$$DIR/$${BASENAME}_parsed_new.txt"; \
+		echo "[1/3] Running scat extraction..."; \
+		scat -t qc -d "$$file" > "$$SCAT_TXT"; \
+		echo "[2/3] Running qmdl-to-codes payload extraction..."; \
+		python3 qmdl-to-codes.py "$$SCAT_TXT" "$$PAYLOAD_TXT" -download=1; \
+		echo "[3/3] Running B887 parser..."; \
+		python3 b887_parser_new_w_time.py "$$PAYLOAD_TXT" > "$$PARSED_TXT"; \
+	done
+	@echo "=========================================="
+	@echo "Finished processing all QMDL files."\
+
+print
