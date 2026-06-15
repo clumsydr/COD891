@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# DIAG & PCAP Capture Script (Speedtest & NSG Triggered)
+# DIAG & PCAP Capture Script (Speedtest & G-NetTrack Pro Triggered)
 # Captures PCAP and QMDL logs strictly for the duration of a speedtest,
-# while running Network Signal Guru in the foreground.
+# while running G-NetTrack Pro in the foreground.
 #
 # Usage: bash capture_diag_pcaps_speedtest.sh [output_dir]
 #
@@ -15,6 +15,23 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+# G-NetTrack Pro tap coordinates (OnePlus 11R)
+GNET_THREE_DOTS_X=1160; GNET_THREE_DOTS_Y=175
+GNET_START_LOG_X=818;   GNET_START_LOG_Y=209
+GNET_END_LOG_X=702;     GNET_END_LOG_Y=362
+
+gnet_start_log() {
+    adb shell input tap $GNET_THREE_DOTS_X $GNET_THREE_DOTS_Y
+    sleep 1
+    adb shell input tap $GNET_START_LOG_X $GNET_START_LOG_Y
+}
+
+gnet_end_log() {
+    adb shell input tap $GNET_THREE_DOTS_X $GNET_THREE_DOTS_Y
+    sleep 1
+    adb shell input tap $GNET_END_LOG_X $GNET_END_LOG_Y
+}
+
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 OUTPUT_DIR=${1:-"diag_capture_${TIMESTAMP}"}
 MAX_SIZE=1000  # MB
@@ -24,7 +41,7 @@ WORKDIR="/data/local/tmp"
 ROOTFS="$WORKDIR/fakeroot"
 
 echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  OnePlus 11R DIAG & PCAP Capture (Speedtest & NSG Mode)${NC}"
+echo -e "${GREEN}  OnePlus 11R DIAG & PCAP Capture (Speedtest & G-NetTrack Pro Mode)${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -81,11 +98,12 @@ EOF
 ACTIVE_IFACE=$(adb shell su -c 'ip route get 8.8.8.8 2>/dev/null' | sed -n 's/.*dev \([^ ]*\).*/\1/p' | head -n 1 | tr -d '\r')
 ACTIVE_IFACE=${ACTIVE_IFACE:-any}
 
-# Launch Network Signal Guru
-echo -e "${GREEN}[✓]${NC} Launching Network Signal Guru..."
-adb shell su -c 'monkey -p com.qtrun.QuickTest -c android.intent.category.LAUNCHER 1' >/dev/null 2>&1
-
-sleep 2
+# Launch G-NetTrack Pro and start logging first
+echo -e "${GREEN}[✓]${NC} Launching G-NetTrack Pro..."
+adb shell su -c 'monkey -p com.gyokovsolutions.gnettrackproplus -c android.intent.category.LAUNCHER 1' >/dev/null 2>&1
+sleep 3
+echo -e "${GREEN}[✓]${NC} Starting G-NetTrack Pro log..."
+gnet_start_log
 
 # Start Background PCAP
 echo -e "${GREEN}[✓]${NC} Starting PCAP on interface: $ACTIVE_IFACE"
@@ -93,18 +111,22 @@ PCAP_FILE="/sdcard/diag_temp/capture_$TIMESTAMP.pcap"
 adb shell su -c "tcpdump -i $ACTIVE_IFACE -w $PCAP_FILE" &>/dev/null &
 TCPDUMP_PID=$!
 
-sleep 2
-
 # Start Background DIAG Log
 echo -e "${GREEN}[✓]${NC} Starting DIAG Modem Logger..."
 adb shell su -c "/vendor/bin/diag_mdlog -o /sdcard/diag_temp -s ${MAX_SIZE} -f /vendor/odm/etc/modem_rf.cfg -c" &>/dev/null &
 DIAG_PID=$!
 
-sleep 2
+# Execute Speedtest in Background
+echo -e "${YELLOW}[*]${NC} Starting Speedtest in background..."
+SPEEDTEST_RESULTS_FILE=$(mktemp)
+adb shell su -c "NO_COLOR=1 chroot $ROOTFS /speedtest --accept-license --accept-gdpr 2>/dev/null" > "$SPEEDTEST_RESULTS_FILE" &
+SPEEDTEST_PID=$!
 
-# Execute the Speedtest (Blocking Call)
-echo -e "${YELLOW}[*]${NC} Running Speedtest... (Capture will stop when finished)"
-RAW_RESULTS=$(adb shell su -c "NO_COLOR=1 chroot $ROOTFS /speedtest --accept-license --accept-gdpr 2>/dev/null")
+# Wait for Speedtest to finish
+echo -e "${YELLOW}[*]${NC} Waiting for Speedtest to finish... (all captures active)"
+wait $SPEEDTEST_PID || true
+RAW_RESULTS=$(cat "$SPEEDTEST_RESULTS_FILE")
+rm -f "$SPEEDTEST_RESULTS_FILE"
 
 # Stop Captures Immediately
 echo -e "${YELLOW}[*]${NC} Speedtest complete. Stopping captures and apps..."
@@ -113,9 +135,12 @@ adb shell su -c 'pkill tcpdump' 2>/dev/null || true
 kill $TCPDUMP_PID 2>/dev/null || true
 kill $DIAG_PID 2>/dev/null || true
 
-# Force Stop Network Signal Guru
-adb shell su -c 'am force-stop com.qtrun.QuickTest' 2>/dev/null || true
-echo -e "${GREEN}[✓]${NC} Closed Network Signal Guru."
+# End G-NetTrack Pro log (triggers save), then close the app
+echo -e "${YELLOW}[*]${NC} Ending G-NetTrack Pro log..."
+gnet_end_log
+sleep 3
+adb shell su -c 'am force-stop com.gyokovsolutions.gnettrackproplus' 2>/dev/null || true
+echo -e "${GREEN}[✓]${NC} Closed G-NetTrack Pro."
 
 # Parse Speedtest Results
 CLEAN_RESULTS=$(echo "$RAW_RESULTS" | tr -d '\033' | sed 's/\[[0-9;]*m//g')
@@ -124,6 +149,19 @@ DOWN=$(echo "$CLEAN_RESULTS" | grep -i 'download' | grep -oE '[0-9]+(\.[0-9]+)?'
 UP=$(echo "$CLEAN_RESULTS" | grep -i 'upload' | grep -oE '[0-9]+(\.[0-9]+)?' | head -n 1 || echo "0.00")
 
 echo -e "${GREEN}  → Ping: ${PING} ms | Down: ${DOWN} Mbps | Up: ${UP} Mbps${NC}"
+
+# Save Speedtest Results to file
+RESULTS_FILE="${OUTPUT_DIR}/speedtest_results.txt"
+{
+    echo "Timestamp : $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "Ping      : ${PING} ms"
+    echo "Download  : ${DOWN} Mbps"
+    echo "Upload    : ${UP} Mbps"
+    echo ""
+    echo "--- Raw Output ---"
+    echo "$CLEAN_RESULTS"
+} > "$RESULTS_FILE"
+echo -e "${GREEN}[✓]${NC} Speedtest results saved to: $RESULTS_FILE"
 
 # Tear down the container safely
 adb shell su <<EOF
