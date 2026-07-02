@@ -1,3 +1,5 @@
+### OLD
+
 Slot: byte 1
 Numerology: lower 4 bits of byte 2
 Frame: lower 10 bits of byte 3 and 4
@@ -15,17 +17,28 @@ Phychan Bit Mask: bit 6 and 7 from byte 9 and lower four bits of byte 10
 Dual Pol Status: bit 4 and 5 of byte 10
 SKIP: bytes 11, 12
 
-OLD
-
 5C 00 83 B8
 29 75 B3 03 A0 6F 0F 01
 11 00 02 00
-00 00 00 00 00 00 00 00 00 00 00
-02
+00 00 00 00
+00 00 00 00
+00 00 00 02
 03 01 B2 03 01 00 00 00 00 02 00 00 01 61 A6 43 00 10 82 03 00 00 00 40 00 00 00 00 00 00 00 00
 05 01 B2 0B 01 07 00 40 00 41 6E 99 01 00 00 00 26 00 00 00 B0 10 00 00 24 00 00 00 00 00 BC 0B
 
-NEW
+### NEW
+
+Slot: byte 1
+Numerology: lower 4 bits of byte 2
+Frame: lower 10 bits of byte 3 and 4
+
+Carrier ID: lower 2 bits of byte 5
+RNTI Type: bit 2 to 5 of byte 5
+Phychan Bit Mask: lower four bits of byte 6
+    0001 == PRACH
+    0010 == PUSCH
+	0100 == PUCCH
+    1000 == SRS
 
 40 00 83 b8
 44 65 35 49 3f 32 10 01
@@ -45,7 +58,6 @@ e4 20 ae 4c 3f 32 10 01
 11 00 03 00
 00 00 00 01
 04 01 2f 05 00 01 00 00 63 73 a3 fc 13 01 13 01 01 00 00 00 00 40 08 00 01 0a 09 25 03 02 2e 20 8d 00 10 20 00 3e 63 24 3f 80 00 00 00 00 00 4a a0 09 60 09 78 04 3c 01 00 00 00 00
-
 
 40 00 83 b8
 c5 83 b0 4c 3f 32 10 01

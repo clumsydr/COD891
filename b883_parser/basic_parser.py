@@ -89,60 +89,60 @@ def parse_payload(payload: bytes, payload_idx: int, hw_timestamp: datetime.datet
     # ── Version 3.17 Logic (Dynamic Variable-Length Records) ──
     if major_ver == 3 and minor_ver == 17:
         for rec_idx in range(num_records):
-            if O + 12 > len(payload): break 
+            if O + 8 > len(payload): break 
             
-            # 1. Decode Byte 0 (Carrier & RNTI Type)
-            b0 = payload[O]
-            carrier_id = b0 & 0x03
-            rnti_val   = (b0 >> 2) & 0x0F
+            # 1. Decode 8-Byte Preamble
+            slot       = payload[O]
+            scs_val    = payload[O+1] & 0x0F
+            frame      = u16(payload, O+2) & 0x3FF
+            carrier_id = payload[O+4] & 0x03
+            rnti_val   = (payload[O+4] >> 2) & 0x0F
+            b5         = payload[O+5]
+            
+            scs        = SCS_MAP.get(scs_val, f"mu{scs_val}")
             rnti_type  = RNTI_MAP.get(rnti_val, f"Type_{rnti_val}")
             
-            # 2. Decode Byte 5 (Physical Channel Indicator & Length)
-            b5 = payload[O+5]
+            # 2. Extract Physical Channel & Record Length
             chan_nibble = b5 & 0x0F
-            
             len_map = {1: 60, 2: 44, 4: 44, 8: 32}
-            rec_len = len_map.get(chan_nibble, 44) # Default to 44 if corrupted
+            rec_len = len_map.get(chan_nibble, 44)
             
             chan_map = {1: "PRACH/SR", 2: "PUSCH", 4: "PUCCH", 8: "SRS"}
             chan_type = chan_map.get(chan_nibble, f"UNK_{chan_nibble}")
 
-            # 3. Decode Universal Preamble Fields
-            abs_slot = payload[O+2] | (payload[O+3] << 8) | (payload[O+4] << 16)
-            c_rnti   = u16(payload, O+10)
-
-            # 4. Unpack specific L1 Payloads via Bitwise Extraction (Starts at Offset 12)
-            p_start, p_num, p_harq, p_mcs, p_rbs, p_rbst, p_tb, p_fmt = [None]*8
+            # 3. Unpack Specific Payloads (Starts at Offset 8)
+            p_start, p_num, p_harq, p_mcs, p_rbs, p_rbst, p_tb, p_fmt, c_rnti = [None]*9
             
-            if chan_type == "PUSCH" and O + 12 + 6 <= len(payload):
-                p = payload[O+12 : O+rec_len]
+            # PUSCH bit-unpacking
+            if chan_type == "PUSCH" and O + 8 + 30 <= len(payload):
+                p = payload[O+8 : O+rec_len]
                 p_start = (p[0] >> 1) & 0x0F
                 p_num   = ((p[1] & 0x01) << 3) | ((p[0] >> 5) & 0x07)
                 p_harq  = (p[1] >> 1) & 0x0F
                 p_mcs   = ((p[2] & 0x01) << 3) | ((p[1] >> 5) & 0x07)
                 p_rbst  = (p[3] << 1) | (p[2] >> 7)
                 p_rbs   = u16(p, 4) & 0x1FF
-                p_tb    = ((u16(p, 6) & 0x1FFF) << 5) | ((u16(p, 4) >> 11) & 0x1F)
+                p_tb    = ((u16(p, 6) & 0x1FFF) << 5) | ((p[5] >> 3) & 0x1F)
+                c_rnti  = u16(p, 28) # RNTI is packed deeply at offset 28 of the payload
                 
-            elif chan_type == "PUCCH" and O + 12 + 4 <= len(payload):
-                p = payload[O+12 : O+rec_len]
+            # PUCCH bit-unpacking
+            elif chan_type == "PUCCH" and O + 8 + 4 <= len(payload):
+                p = payload[O+8 : O+rec_len]
                 p_fmt   = (p[0] >> 1) & 0x0F
                 p_start = p[1] & 0x0F
                 p_num   = (p[1] >> 4) & 0x0F
                 p_rbst  = u16(p, 2) & 0x3FF
                 p_rbs   = p[4]
             
-            # 5. Append Record and Step Offset
             results.append(UlSchedRecord(
                 timestamp=hw_timestamp, payload_idx=payload_idx, record_idx=rec_idx,
-                version="3.17", abs_slot=abs_slot, carrier_id=carrier_id, rnti_type=rnti_type, 
-                c_rnti=c_rnti, chan_type=chan_type, length=rec_len,
+                version="3.17", slot=slot, frame=frame, scs=scs, carrier_id=carrier_id, 
+                rnti_type=rnti_type, c_rnti=c_rnti, chan_type=chan_type, length=rec_len,
                 start_sym=p_start, num_sym=p_num, harq_id=p_harq, mcs=p_mcs, 
                 num_rbs=p_rbs, rb_start=p_rbst, tb_size=p_tb, pucch_fmt=p_fmt
             ))
             
-            O += rec_len # Dynamically jump to the next prefixed record
-
+            O += rec_len
     return results
 
 # ── Stream splitter ───────────────────────────────────────────────────────────
