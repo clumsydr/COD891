@@ -7,7 +7,7 @@
 
 INTERVAL=300  # 5 minutes in seconds
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CAPTURE_SCRIPT="$SCRIPT_DIR/capture_diag_pcap_nsg_speedtest.sh"
+CAPTURE_SCRIPT="$SCRIPT_DIR/capture_diag_iperf_pcap.sh"
 BASE_OUTPUT_DIR="${1:-scheduled_captures}"
 
 GREEN='\033[0;32m'
