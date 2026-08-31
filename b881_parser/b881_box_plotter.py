@@ -143,6 +143,7 @@ def process_payload_file(payload_file, bin_size_sec=1.0):
     
     # Bin sums
     mcs_sum_binned, _ = np.histogram(b881_times, bins=bins, weights=[d['num_mcs'] for d in b881_deltas])
+    prb_sum_binned, _ = np.histogram(b881_times, bins=bins, weights=[d['num_prb'] for d in b881_deltas])
     new_tb_binned, _ = np.histogram(b881_times, bins=bins, weights=[d['num_new_tb'] for d in b881_deltas])
     retx_tb_binned, _ = np.histogram(b881_times, bins=bins, weights=[d['num_retx_tb'] for d in b881_deltas])
     new_tx_bytes_binned, _ = np.histogram(b881_times, bins=bins, weights=[d['new_tx_bytes'] for d in b881_deltas])
@@ -154,19 +155,19 @@ def process_payload_file(payload_file, bin_size_sec=1.0):
     if not np.any(active_mask):
         return None
 
-    # Calculate Average MCS: sum(MCS) / total_tb
-    mcs_active = mcs_sum_binned[active_mask] / total_tb_binned[active_mask]
-    
-    # Calculate TB-based Retransmission Rate (%)
-    retx_rate_active = (retx_tb_binned[active_mask] / total_tb_binned[active_mask]) * 100.0
-    
     # Calculate Uplink Throughput (Mbps): (bytes * 8) / (1e6 * bin_size)
     throughput_active = (new_tx_bytes_binned[active_mask] * 8.0) / (1e6 * bin_size_sec)
 
+    # Calculate Average MCS: sum(MCS) / total_tb for active uplink throughput bins
+    mcs_active = mcs_sum_binned[active_mask] / total_tb_binned[active_mask]
+    
+    # Calculate Average Allocated PRBs: sum(PRB) / total_tb for active uplink throughput bins
+    prb_active = prb_sum_binned[active_mask] / total_tb_binned[active_mask]
+
     return {
+        'throughput': throughput_active,
         'mcs': mcs_active,
-        'retx_rate': retx_rate_active,
-        'throughput': throughput_active
+        'prb': prb_active
     }
 
 def clean_filename(path):
@@ -269,7 +270,7 @@ def main():
         plot_filename = args[-1]
         args = args[:-1]
         
-    # If no files are specified, let's search in the payloads directory relative to this script
+    # If no files are specified, let's search in the standard payload directories
     if not args:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         search_patterns = [
@@ -302,9 +303,9 @@ def main():
     for f in files:
         print(f" - {f}")
 
-    all_mcs = []
-    all_retx = []
     all_tput = []
+    all_mcs = []
+    all_prb = []
     labels = []
 
     for f in files:
@@ -314,9 +315,9 @@ def main():
         print(f"Processing {clean_name} ({base})...")
         metrics = process_payload_file(f)
         if metrics is not None:
-            all_mcs.append(metrics['mcs'])
-            all_retx.append(metrics['retx_rate'])
             all_tput.append(metrics['throughput'])
+            all_mcs.append(metrics['mcs'])
+            all_prb.append(metrics['prb'])
             labels.append(clean_name)
         else:
             print(f"  Warning: No active transmission data found in {f}. Skipping.")
@@ -329,18 +330,17 @@ def main():
     max_label_len = max(len(l) for l in labels) if labels else 0
     rotation = 45 if len(labels) > 6 or max_label_len > 6 else 0
 
-    # Make the figure
+    # Make the figure with 3 subplots side by side in sequence: Throughput, MCS, PRB
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
 
-    # Style and plot each metric
-    # MCS (indigo/purple-ish color)
-    style_boxplot(ax1, all_mcs, labels, "Modulation & Coding Scheme", "Average MCS Index", "#6f42c1", rotation=rotation)
+    # 1. Uplink Throughput (blue/teal-ish color)
+    style_boxplot(ax1, all_tput, labels, "Uplink Throughput", "Throughput (Mbps)", "#0288d1", rotation=rotation)
+
+    # 2. Modulation & Coding Scheme (MCS) (indigo/purple-ish color)
+    style_boxplot(ax2, all_mcs, labels, "Modulation & Coding Scheme", "Average MCS Index", "#6f42c1", rotation=rotation)
     
-    # Retransmission Rate (coral/red-ish color)
-    style_boxplot(ax2, all_retx, labels, "Uplink BLER", "Retransmission Rate (%)", "#d9534f", rotation=rotation)
-    
-    # Uplink Throughput (blue/teal-ish color)
-    style_boxplot(ax3, all_tput, labels, "Uplink Throughput", "Throughput (Mbps)", "#0288d1", rotation=rotation)
+    # 3. Physical Resource Blocks (PRB) (coral/red-ish color)
+    style_boxplot(ax3, all_prb, labels, "Resource Block Allocation", "Allocated PRBs (Num PRBs)", "#d9534f", rotation=rotation)
 
     plt.suptitle("B881 Uplink Performance Metrics Distribution Across Runs", fontsize=15, fontweight='bold', y=0.98)
     plt.tight_layout()

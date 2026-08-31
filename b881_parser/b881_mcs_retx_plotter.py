@@ -81,9 +81,8 @@ def main():
         sys.exit(1)
 
     payload_file = sys.argv[1]
-    plot_filename = sys.argv[2] if len(sys.argv) > 2 else "b881_mcs_retx_correlation.png"
+    plot_filename = sys.argv[2] if len(sys.argv) > 2 else "b881_mcs_retx.png"
 
-    # Extract raw B881 records
     print("Extracting B881 records...")
     raw_records = extract_b881_data(payload_file)
     if not raw_records:
@@ -143,23 +142,23 @@ def main():
     new_tx_bytes_binned, _ = np.histogram(b881_times, bins=bins, weights=[d['new_tx_bytes'] for d in b881_deltas])
     retx_bytes_binned, _ = np.histogram(b881_times, bins=bins, weights=[d['retx_bytes'] for d in b881_deltas])
 
-    # Calculate Average MCS: sum(MCS) / (new_tb + retx_tb) for active transmission bins
+    # Calculate Average MCS: sum(MCS) / (new_tb + retx_tb) for active transmission bins (where uplink throughput > 0)
     total_tb_binned = new_tb_binned + retx_tb_binned
     valid_tb_mask = (total_tb_binned > 0) & (new_tx_bytes_binned > 0)
     mcs_binned = np.full(len(mcs_sum_binned), np.nan, dtype=float)
     mcs_binned[valid_tb_mask] = mcs_sum_binned[valid_tb_mask] / total_tb_binned[valid_tb_mask]
 
     # Calculate TB-based Retransmission Rate (BLER)
-    retx_rate_tb = np.zeros(len(retx_tb_binned), dtype=float)
-    retx_rate_tb[valid_tb_mask] = retx_tb_binned[valid_tb_mask] / total_tb_binned[valid_tb_mask]
+    retx_rate_tb = np.full(len(retx_tb_binned), np.nan, dtype=float)
+    retx_rate_tb[valid_tb_mask] = (retx_tb_binned[valid_tb_mask] / total_tb_binned[valid_tb_mask]) * 100.0
 
     # Calculate Byte-based Retransmission Rate
     total_bytes_binned = new_tx_bytes_binned + retx_bytes_binned
-    retx_rate_bytes = np.zeros(len(retx_bytes_binned), dtype=float)
+    retx_rate_bytes = np.full(len(retx_bytes_binned), np.nan, dtype=float)
     valid_bytes_mask = total_bytes_binned > 0
-    retx_rate_bytes[valid_bytes_mask] = retx_bytes_binned[valid_bytes_mask] / total_bytes_binned[valid_bytes_mask]
+    retx_rate_bytes[valid_bytes_mask] = retx_rate_bytes[valid_bytes_mask] / total_bytes_binned[valid_bytes_mask]
 
-    # Calculate overall average MCS throughout active transmissions
+    # Calculate overall average MCS throughout active transmissions (ignore zero throughput)
     active_deltas = [d for d in b881_deltas if d['new_tx_bytes'] > 0]
     total_new_tb = sum(d['num_new_tb'] for d in active_deltas)
     total_retx_tb = sum(d['num_retx_tb'] for d in active_deltas)

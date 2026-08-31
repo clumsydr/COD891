@@ -95,10 +95,10 @@ def extract_rbs_with_time(payload_file):
                             major_ver = u16(pkt_data, 14)
                             
                             if major_ver == 3 and minor_ver == 1:
-                                O = 48 
+                                O = 24 
                                 if O + 8 <= len(pkt_data):
-                                    re_tx_bytes = int.from_bytes(pkt_data[O : O+8], byteorder='little')
-                                    b881_raw_cumulative.append((pkt_time, re_tx_bytes, True))
+                                    new_tx_bytes = int.from_bytes(pkt_data[O : O+8], byteorder='little')
+                                    b881_raw_cumulative.append((pkt_time, new_tx_bytes, True))
                             i += pkt_len - 1
                     i += 1
             except Exception:
