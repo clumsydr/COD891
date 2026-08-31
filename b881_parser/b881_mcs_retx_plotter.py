@@ -54,6 +54,11 @@ def extract_b881_data(payload_file):
                                         num_new_tb = u32(pkt_data, O+44)
                                         num_retx_tb = u32(pkt_data, O+48)
                                         
+                                        # Skip empty/uninitialized records to prevent false delta jumps
+                                        if new_tx == 0 and num_mcs == 0 and num_new_tb == 0:
+                                            O += 80
+                                            continue
+                                            
                                         records.append({
                                             'time': pkt_time,
                                             'new_tx': new_tx,
@@ -138,10 +143,10 @@ def main():
     new_tx_bytes_binned, _ = np.histogram(b881_times, bins=bins, weights=[d['new_tx_bytes'] for d in b881_deltas])
     retx_bytes_binned, _ = np.histogram(b881_times, bins=bins, weights=[d['retx_bytes'] for d in b881_deltas])
 
-    # Calculate Average MCS: sum(MCS) / (new_tb + retx_tb)
+    # Calculate Average MCS: sum(MCS) / (new_tb + retx_tb) for active transmission bins
     total_tb_binned = new_tb_binned + retx_tb_binned
-    mcs_binned = np.zeros(len(mcs_sum_binned), dtype=float)
-    valid_tb_mask = total_tb_binned > 0
+    valid_tb_mask = (total_tb_binned > 0) & (new_tx_bytes_binned > 0)
+    mcs_binned = np.full(len(mcs_sum_binned), np.nan, dtype=float)
     mcs_binned[valid_tb_mask] = mcs_sum_binned[valid_tb_mask] / total_tb_binned[valid_tb_mask]
 
     # Calculate TB-based Retransmission Rate (BLER)
@@ -154,17 +159,18 @@ def main():
     valid_bytes_mask = total_bytes_binned > 0
     retx_rate_bytes[valid_bytes_mask] = retx_bytes_binned[valid_bytes_mask] / total_bytes_binned[valid_bytes_mask]
 
-    # Calculate overall average MCS throughout the transmission
-    total_new_tb = sum(d['num_new_tb'] for d in b881_deltas)
-    total_retx_tb = sum(d['num_retx_tb'] for d in b881_deltas)
+    # Calculate overall average MCS throughout active transmissions
+    active_deltas = [d for d in b881_deltas if d['new_tx_bytes'] > 0]
+    total_new_tb = sum(d['num_new_tb'] for d in active_deltas)
+    total_retx_tb = sum(d['num_retx_tb'] for d in active_deltas)
     total_tb = total_new_tb + total_retx_tb
     overall_avg_mcs = 0.0
     if total_tb > 0:
-        total_mcs = sum(d['num_mcs'] for d in b881_deltas)
+        total_mcs = sum(d['num_mcs'] for d in active_deltas)
         overall_avg_mcs = total_mcs / total_tb
 
-    # Calculate correlation for active bins
-    active_bins_mask = total_tb_binned > 0
+    # Calculate correlation for active bins (non-zero uplink throughput)
+    active_bins_mask = valid_tb_mask
     active_mcs = mcs_binned[active_bins_mask]
     active_retx_tb = retx_tb_binned[active_bins_mask]
     
@@ -173,17 +179,21 @@ def main():
         corr_val = np.corrcoef(active_mcs, active_retx_tb)[0, 1]
 
     # Calculate first-order differences (deltas) of the averages/volumes
-    diff_mcs = np.diff(mcs_binned)
-    diff_retx_tb = np.diff(retx_tb_binned)
     diff_time_axis = time_axis[1:]
+    diff_mcs = np.full(len(diff_time_axis), np.nan, dtype=float)
+    diff_retx_tb = np.full(len(diff_time_axis), np.nan, dtype=float)
 
     # Calculate correlation for the first-order differences
     diff_mcs_active = []
     diff_retx_active = []
     for t in range(1, len(mcs_binned)):
-        if total_tb_binned[t] > 0 and total_tb_binned[t-1] > 0:
-            diff_mcs_active.append(mcs_binned[t] - mcs_binned[t-1])
-            diff_retx_active.append(retx_tb_binned[t] - retx_tb_binned[t-1])
+        if active_bins_mask[t] and active_bins_mask[t-1]:
+            d_m = mcs_binned[t] - mcs_binned[t-1]
+            d_r = retx_tb_binned[t] - retx_tb_binned[t-1]
+            diff_mcs[t-1] = d_m
+            diff_retx_tb[t-1] = d_r
+            diff_mcs_active.append(d_m)
+            diff_retx_active.append(d_r)
     
     diff_corr_val = 0.0
     if len(diff_mcs_active) > 1 and np.std(diff_mcs_active) != 0 and np.std(diff_retx_active) != 0:
@@ -245,8 +255,9 @@ def main():
     line3 = ax4.plot(diff_time_axis, diff_mcs, color=color, label='Change in MCS (d_MCS)', linewidth=1.5, alpha=0.8)
     ax4.tick_params(axis='y', labelcolor=color)
     ax4.grid(True, alpha=0.3)
-    if len(diff_mcs) > 0:
-        max_diff_mcs = max(abs(diff_mcs)) or 5
+    valid_diff_mcs = diff_mcs[~np.isnan(diff_mcs)]
+    if len(valid_diff_mcs) > 0:
+        max_diff_mcs = max(abs(valid_diff_mcs)) or 5
         ax4.set_ylim(-max_diff_mcs - 1, max_diff_mcs + 1)
 
     ax5 = ax4.twinx()
@@ -254,8 +265,9 @@ def main():
     ax5.set_ylabel('Change in Retransmissions (d_Retx)', color=color)
     line4 = ax5.plot(diff_time_axis, diff_retx_tb, color=color, linestyle='--', label='Change in Retx TBs (d_Retx)', linewidth=1.5, alpha=0.8)
     ax5.tick_params(axis='y', labelcolor=color)
-    if len(diff_retx_tb) > 0:
-        max_diff_retx = max(abs(diff_retx_tb)) or 10
+    valid_diff_retx = diff_retx_tb[~np.isnan(diff_retx_tb)]
+    if len(valid_diff_retx) > 0:
+        max_diff_retx = max(abs(valid_diff_retx)) or 10
         ax5.set_ylim(-max_diff_retx * 1.1, max_diff_retx * 1.1)
 
     # Put legend together

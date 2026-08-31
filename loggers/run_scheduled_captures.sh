@@ -5,7 +5,7 @@
 # Each run is saved with a zero-based index and timestamp.
 #
 
-INTERVAL=300  # 5 minutes in seconds
+INTERVAL=60  # 5 minutes in seconds
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CAPTURE_SCRIPT="$SCRIPT_DIR/capture_diag_iperf_pcap.sh"
 BASE_OUTPUT_DIR="${1:-scheduled_captures}"

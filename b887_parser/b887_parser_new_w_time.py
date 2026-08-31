@@ -52,13 +52,13 @@ def u32(b, o): return b[o] | (b[o+1]<<8) | (b[o+2]<<16) | (b[o+3]<<24)
 
 def parse_qxdm_time(ts_bytes: bytes) -> datetime.datetime:
     """
-    Converts the 8-byte QXDM hardware timestamp into a standard Python datetime.
+    Converts the 8-byte QXDM hardware timestamp into a standard Python datetime (IST, UTC+5:30).
     The QXDM timestamp is a 64-bit little-endian integer.
-    Upper 48 bits = number of 1.25 ms ticks since CDMA epoch (Jan 6, 1980).
+    Upper 48 bits = number of 1.25 ms ticks since CDMA epoch (Jan 6, 1980 00:00:00 UTC).
     Lower 16 bits = fractional component (1/65536th of a tick).
     """
     if len(ts_bytes) != 8:
-        return datetime.datetime.now()
+        raise ValueError(f"Expected 8 bytes for QXDM timestamp, got {len(ts_bytes)}")
         
     ts_int = int.from_bytes(ts_bytes, byteorder='little')
     
@@ -66,10 +66,12 @@ def parse_qxdm_time(ts_bytes: bytes) -> datetime.datetime:
     fractional_ticks = (ts_int & 0xFFFF) / 65536.0
     
     total_ticks = integer_ticks + fractional_ticks
-    time_seconds = total_ticks * 1.25 / 1000.0
+    time_seconds = (total_ticks * 1.25 / 1000.0)
     
-    cdma_epoch = datetime.datetime(1980, 1, 6)
-    return cdma_epoch + datetime.timedelta(seconds=time_seconds)
+    cdma_epoch = datetime.datetime(1980, 1, 6, tzinfo=datetime.timezone.utc)
+    utc_dt = cdma_epoch + datetime.timedelta(seconds=time_seconds)
+    ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+    return utc_dt.astimezone(ist)
 
 def extract_entry_fields(entry: bytes) -> Tuple[int, int, int, int, int, int, int]:
     pci        = u16(entry, 2) & 0x3FF
@@ -84,8 +86,8 @@ def extract_entry_fields(entry: bytes) -> Tuple[int, int, int, int, int, int, in
 # ── Per-version record parsers ────────────────────────────────────────────────
 def parse_record(rec: bytes, payload_idx: int, rec_idx: int, version: int, hw_timestamp: datetime.datetime) -> PdschRecord:
     slot       = rec[0]
-    mu         = rec[1]
-    frame      = u16(rec, 2)
+    mu         = rec[1] & 0x0F
+    frame      = u16(rec, 2) & 0x3FF
     carrier_id = rec[5]
     entry      = rec[V2_REC_HDR_LEN:] if version == 2 else rec[V3_REC_HDR_LEN:]
     pci, nr_arfcn, tb, mcs, rbs, harq, k1 = extract_entry_fields(entry)
