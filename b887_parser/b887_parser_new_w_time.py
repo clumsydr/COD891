@@ -42,6 +42,7 @@ class PdschRecord:
     num_rbs:     int
     harq_id:     int
     k1:          int
+    num_layers:  int
 
     def to_dict(self):
         return {f.name: getattr(self, f.name) for f in dc_fields(self)}
@@ -73,15 +74,16 @@ def parse_qxdm_time(ts_bytes: bytes) -> datetime.datetime:
     ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
     return utc_dt.astimezone(ist)
 
-def extract_entry_fields(entry: bytes) -> Tuple[int, int, int, int, int, int, int]:
+def extract_entry_fields(entry: bytes) -> Tuple[int, int, int, int, int, int, int, int]:
     pci        = u16(entry, 2) & 0x3FF
     nr_arfcn   = (u32(entry, 3) >> 2) & 0x3FFFFF
-    tb_size = (u32(entry, 6) >> 5) & 0x1FFFF
-    mcs     = (u16(entry, 9) >> 2) & 0x1F
-    num_rbs = u16(entry, 10) & 0x1FF
-    harq_id = (entry[11] >> 3) & 0xF
-    k1      = (u16(entry, 12) >> 6) & 0xF
-    return pci, nr_arfcn, tb_size, mcs, num_rbs, harq_id, k1
+    tb_size    = (u32(entry, 6) >> 5) & 0x1FFFF
+    mcs        = (u16(entry, 9) >> 2) & 0x1F
+    num_rbs    = u16(entry, 10) & 0x1FF
+    harq_id    = (entry[11] >> 3) & 0xF
+    k1         = (u16(entry, 12) >> 6) & 0xF
+    num_layers = ((entry[13] >> 5) & 0x7) + 1
+    return pci, nr_arfcn, tb_size, mcs, num_rbs, harq_id, k1, num_layers
 
 # ── Per-version record parsers ────────────────────────────────────────────────
 def parse_record(rec: bytes, payload_idx: int, rec_idx: int, version: int, hw_timestamp: datetime.datetime) -> PdschRecord:
@@ -90,7 +92,7 @@ def parse_record(rec: bytes, payload_idx: int, rec_idx: int, version: int, hw_ti
     frame      = u16(rec, 2) & 0x3FF
     carrier_id = rec[5]
     entry      = rec[V2_REC_HDR_LEN:] if version == 2 else rec[V3_REC_HDR_LEN:]
-    pci, nr_arfcn, tb, mcs, rbs, harq, k1 = extract_entry_fields(entry)
+    pci, nr_arfcn, tb, mcs, rbs, harq, k1, num_layers = extract_entry_fields(entry)
     
     return PdschRecord(
         timestamp=hw_timestamp,
@@ -99,6 +101,7 @@ def parse_record(rec: bytes, payload_idx: int, rec_idx: int, version: int, hw_ti
         scs=SCS_MAP.get(mu, f"mu{mu}"),
         carrier_id=carrier_id, pci=pci, nr_arfcn=nr_arfcn,
         tb_size=tb, mcs=mcs, num_rbs=rbs, harq_id=harq, k1=k1,
+        num_layers=num_layers,
     )
 
 # ── Payload parser ────────────────────────────────────────────────────────────
@@ -184,9 +187,9 @@ def print_results(results: List[PdschRecord]):
         print("No B887 records found.")
         return
 
-    COL = ("Timestamp", "Pkt", "Rec", "Ver", "Slot", "Frame", "SCS", "CID", "Phy Cell ID", "NR-ARFCN", "TB Size", "MCS", "Num RBs", "HARQ", "K1")
-    FMT = "{:<26} {:>4}  {:>4}  {:>3}  {:>5}  {:>6}  {:>7}  {:>4} {:>8} {:>12} {:>8}  {:>4}  {:>8}  {:>5}  {:>4}"
-    SEP = "=" * 115
+    COL = ("Timestamp", "Pkt", "Rec", "Ver", "Slot", "Frame", "SCS", "CID", "Phy Cell ID", "NR-ARFCN", "TB Size", "MCS", "Num RBs", "HARQ", "K1", "Layers")
+    FMT = "{:<26} {:>4}  {:>4}  {:>3}  {:>5}  {:>6}  {:>7}  {:>4} {:>8} {:>12} {:>8}  {:>4}  {:>8}  {:>5}  {:>4}  {:>6}"
+    SEP = "=" * 123
 
     print(f"\n{SEP}")
     print("  B887 NR5G MAC PDSCH — Parsed Records with Hardware Timestamps")
@@ -199,7 +202,7 @@ def print_results(results: List[PdschRecord]):
             ts_str, r.payload_idx, r.record_idx, r.version,
             _fmt(r.slot), _fmt(r.frame), _fmt(r.scs),
             _fmt(r.carrier_id), r.pci, r.nr_arfcn, r.tb_size, r.mcs,
-            r.num_rbs, r.harq_id, r.k1))
+            r.num_rbs, r.harq_id, r.k1, r.num_layers))
 
     mcs_vals = [r.mcs for r in results]
     by_ver = {}

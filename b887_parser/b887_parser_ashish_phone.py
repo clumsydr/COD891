@@ -15,6 +15,7 @@ Verified field layout (28 bytes per record, starting at payload offset 28):
   [20-21] Num RBs— uint16 LE & 0x1FF
   [21]    HARQ ID— (byte >> 3) & 0xF
   [22-23] K1     — (uint16 LE >> 6) & 0xF
+  [23]    Num Layers — ((byte >> 5) & 0x7) + 1
 
 Payload structure:
   [0-11]  QXDM log header  (len 2B LE + code 2B LE + timestamp 8B)
@@ -62,6 +63,7 @@ class PdschRecord:
     num_rbs:     int
     harq_id:     int
     k1:          int
+    num_layers:  int
 
     def to_dict(self):
         return {f.name: getattr(self, f.name) for f in dc_fields(self)}
@@ -129,6 +131,7 @@ def parse_payload(payload: bytes, payload_idx: int) -> List[PdschRecord]:
         num_rbs    = u16(r, 20) & 0x1FF
         harq_id    = (r[21] >> 3) & 0xF
         k1         = (u16(r, 22) >> 6) & 0xF
+        num_layers = ((r[23] >> 5) & 0x7) + 1
 
         results.append(PdschRecord(
             payload_idx=payload_idx, record_idx=rec_idx,
@@ -138,6 +141,7 @@ def parse_payload(payload: bytes, payload_idx: int) -> List[PdschRecord]:
             pci=pci, nr_arfcn=nr_arfcn,
             tb_size=tb_size, mcs=mcs,
             num_rbs=num_rbs, harq_id=harq_id, k1=k1,
+            num_layers=num_layers,
         ))
 
     return results
@@ -197,9 +201,9 @@ def print_results(results: List[PdschRecord]):
         print("No B887 records found.")
         return
 
-    COL = ("Pkt","Rec","Slot","Frame","SCS","Phy Cell ID","NR-ARFCN","TB Size","MCS","Num RBs","HARQ","K1")
-    FMT = "{:>4}  {:>4}  {:>5}  {:>6}  {:>6} {:>7} {:>10}  {:>8}  {:>4}  {:>8}  {:>5}  {:>4}"
-    SEP = "=" * 76
+    COL = ("Pkt","Rec","Slot","Frame","SCS","Phy Cell ID","NR-ARFCN","TB Size","MCS","Num RBs","HARQ","K1","Layers")
+    FMT = "{:>4}  {:>4}  {:>5}  {:>6}  {:>6} {:>7} {:>10}  {:>8}  {:>4}  {:>8}  {:>5}  {:>4}  {:>6}"
+    SEP = "=" * 84
 
     print(f"\n{SEP}")
     print("  B887 NR5G MAC PDSCH — Parsed Records")
@@ -210,7 +214,7 @@ def print_results(results: List[PdschRecord]):
         print("  " + FMT.format(
             r.payload_idx, r.record_idx, r.slot, r.frame,
             r.scs, r.pci, r.nr_arfcn, r.tb_size, r.mcs,
-            r.num_rbs, r.harq_id, r.k1))
+            r.num_rbs, r.harq_id, r.k1, r.num_layers))
 
     mcs_vals = [r.mcs for r in results]
     print(f"\n  Total records : {len(results)}")

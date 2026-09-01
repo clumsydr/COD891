@@ -30,21 +30,6 @@ parse_old:
 parse:
 	python3 b887_parser_new_w_time.py ../loggers/lajja_logs/run_025_20260626_200446/diag_log_20260626_2004521782484492224_payloads.txt > ../loggers/lajja_logs/run_025_20260626_200446/parsed.txt
 
-to_code:
-	python3 qmdl_to_codes.py $(DIRECTORY)/qmdl-to-scat.txt $(DIRECTORY)/$(FILE).txt
-
-scan_b567:
-	python3 scan_b567.py $(DIRECTORY)/$(FILE).txt
-
-scan_b567_nonzero:
-	python3 scan_b567.py $(DIRECTORY)/$(FILE).txt --nonzero-only
-
-unchanging:
-	python3 unchanging.py $(DIRECTORY)/$(FILE).txt --header=29 --record=32 --offset=28 > unchanging.txt
-
-work:
-	python3 work.py $(DIRECTORY)/control.txt > work.txt
-
 packets:
 	scat -t qc -d $(INDIRECTORY)$(INDEX)/*.qmdl > $(FINALDIRECTORY)/$(INFILE)$(INDEX).txt
 	python3 qmdl_to_codes.py $(FINALDIRECTORY)/$(INFILE)$(INDEX).txt $(FINALDIRECTORY)/$(FILE)$(INDEX).txt
@@ -60,39 +45,6 @@ run_packets:
 	@for stage in $(STAGES); do \
 		make packets INDEX=$$stage; \
 	done
-
-correlation:
-	python3 sequence_correlator.py $(FINALDIRECTORY)/$(FILE)$(INDEX).txt $(INDIRECTORY)$(INDEX)/*.pcap dl
-
-
-# ==============================================================================
-# Parse all QMDL files in a single capture directory into a single payload file
-# Usage: make parse_capture CAP_DIR=../loggers/data/Airtel/Amul_IITDelhi/20260812/capture_000_20260812_113954
-# ==============================================================================
-parse_capture:
-	@if [ -z "$(CAP_DIR)" ]; then \
-		echo "Error: Please specify CAP_DIR=<path_to_capture_directory>"; \
-		echo "Example: make parse_capture CAP_DIR=../loggers/data/Airtel/Amul_IITDelhi/20260812/capture_000_20260812_113954"; \
-		exit 1; \
-	fi
-	@echo "============================================================"
-	@echo "Processing capture directory: $(CAP_DIR)"
-	@QMDL_FILES=$$(ls $(CAP_DIR)/*.qmdl 2>/dev/null | sort); \
-	if [ -z "$$QMDL_FILES" ]; then \
-		echo "Error: No .qmdl files found in $(CAP_DIR)"; \
-		exit 1; \
-	fi; \
-	SCAT_TXT="$(CAP_DIR)/qmdl-to-scat.txt"; \
-	PAYLOAD_TXT="$(CAP_DIR)/payloads_b887.txt"; \
-	PARSED_TXT="$(CAP_DIR)/payloads_parsed_new.txt"; \
-	echo "[1/3] Running scat decoding across all QMDLs in capture..."; \
-	scat -t qc -d $$QMDL_FILES > "$$SCAT_TXT"; \
-	echo "[2/3] Extracting B887 hex payloads into single file: $$PAYLOAD_TXT..."; \
-	python3 qmdl_to_codes.py "$$SCAT_TXT" "$$PAYLOAD_TXT"; \
-	echo "[3/3] Parsing B887 records with timestamps into: $$PARSED_TXT..."; \
-	python3 b887_parser_new_w_time.py "$$PAYLOAD_TXT" > "$$PARSED_TXT"; \
-	echo "Done! Successfully generated $$PAYLOAD_TXT"
-
 
 # ==============================================================================
 # Process all capture directories in DATA_DIR (combining all QMDLs per capture)

@@ -22,6 +22,7 @@ Supports two confirmed structure versions based on the Major version field:
 │ Num RBs  │  entry[10-11] &0x1FF         entry[10-11] &0x1FF        ✓same    │
 │ HARQ ID  │  entry[11]   (>>3)&0xF       entry[11]   (>>3)&0xF      ✓same    │
 │ K1       │  entry[12-13](>>6)&0xF       entry[12-13](>>6)&0xF      ✓same    │
+│ NumLayers│  entry[13]   (>>5)&0x7 + 1   entry[13]   (>>5)&0x7 + 1  ✓same    │
 └──────────┴──────────────────────────────────────────────────────────────────┘
 
 NOTE: The outer framing (how the stream arrives) may include a DIAG framing
@@ -76,6 +77,7 @@ class PdschRecord:
     num_rbs:     int
     harq_id:     int
     k1:          int
+    num_layers:  int
 
     def to_dict(self):
         return {f.name: getattr(self, f.name) for f in dc_fields(self)}
@@ -84,40 +86,45 @@ class PdschRecord:
 def u16(b, o): return b[o] | (b[o+1] << 8)
 def u32(b, o): return b[o] | (b[o+1]<<8) | (b[o+2]<<16) | (b[o+3]<<24)
 
-def extract_entry_fields(entry: bytes) -> Tuple[int, int, int, int, int, int, int]:
+def extract_entry_fields(entry: bytes) -> Tuple[int, int, int, int, int, int, int, int]:
     """
-    Extract (tb_size, mcs, num_rbs, harq_id, k1) from a PDSCH entry.
+    Extract (pci, nr_arfcn, tb_size, mcs, num_rbs, harq_id, k1, num_layers) from a PDSCH entry.
     Entry layout is identical between v2 and v3 for these fields:
-      entry[6-8]  : TB Size  = (uint32 LE >> 5) & 0x1FFFF
-      entry[9-10] : MCS      = (uint16 LE >> 2) & 0x1F
-      entry[10-11]: Num RBs  = uint16 LE & 0x1FF
-      entry[11]   : HARQ ID  = (byte >> 3) & 0xF
-      entry[12-13]: K1       = (uint16 LE >> 6) & 0xF
+      entry[2-3]  : PCI        = u16(entry, 2) & 0x3FF
+      entry[3-6]  : NR-ARFCN   = (u32(entry, 3) >> 2) & 0x3FFFFF
+      entry[6-8]  : TB Size    = (u32(entry, 6) >> 5) & 0x1FFFF
+      entry[9-10] : MCS        = (u16(entry, 9) >> 2) & 0x1F
+      entry[10-11]: Num RBs    = uint16 LE & 0x1FF
+      entry[11]   : HARQ ID    = (byte >> 3) & 0xF
+      entry[12-13]: K1         = (u16(entry, 12) >> 6) & 0xF
+      entry[13]   : Num Layers = ((entry[13] >> 5) & 0x7) + 1
     """
     pci        = u16(entry, 2) & 0x3FF
     nr_arfcn   = (u32(entry, 3) >> 2) & 0x3FFFFF
-    tb_size = (u32(entry, 6) >> 5) & 0x1FFFF
-    mcs     = (u16(entry, 9) >> 2) & 0x1F
-    num_rbs = u16(entry, 10) & 0x1FF
-    harq_id = (entry[11] >> 3) & 0xF
-    k1      = (u16(entry, 12) >> 6) & 0xF
-    return pci, nr_arfcn, tb_size, mcs, num_rbs, harq_id, k1
+    tb_size    = (u32(entry, 6) >> 5) & 0x1FFFF
+    mcs        = (u16(entry, 9) >> 2) & 0x1F
+    num_rbs    = u16(entry, 10) & 0x1FF
+    harq_id    = (entry[11] >> 3) & 0xF
+    k1         = (u16(entry, 12) >> 6) & 0xF
+    num_layers = ((entry[13] >> 5) & 0x7) + 1
+    return pci, nr_arfcn, tb_size, mcs, num_rbs, harq_id, k1, num_layers
 
 # ── Per-version record parsers ────────────────────────────────────────────────
 def parse_record(rec: bytes, payload_idx: int, rec_idx: int, version: int) -> PdschRecord:
-    """Parse a 28-byte version-2 record."""
+    """Parse a 28-byte version-2 or 32-byte version-3 record."""
     slot       = rec[0]
     mu         = rec[1]
     frame      = u16(rec, 2)
     carrier_id = rec[5]
     entry      = rec[V2_REC_HDR_LEN:]
-    pci, nr_arfcn, tb, mcs, rbs, harq, k1 = extract_entry_fields(entry)
+    pci, nr_arfcn, tb, mcs, rbs, harq, k1, num_layers = extract_entry_fields(entry)
     return PdschRecord(
         payload_idx=payload_idx, record_idx=rec_idx, version=version,
         slot=slot, frame=frame,
         scs=SCS_MAP.get(mu, f"mu{mu}"),
         carrier_id=carrier_id, pci=pci, nr_arfcn=nr_arfcn,
         tb_size=tb, mcs=mcs, num_rbs=rbs, harq_id=harq, k1=k1,
+        num_layers=num_layers,
     )
 
 # def parse_record_v3(rec: bytes, payload_idx: int, rec_idx: int) -> PdschRecord:
@@ -223,9 +230,9 @@ def print_results(results: List[PdschRecord]):
         print("No B887 records found.")
         return
 
-    COL = ("Pkt","Rec","Ver","Slot","Frame","SCS","CID","Phy Cell ID", "NR-ARFCN", "TB Size","MCS","Num RBs","HARQ","K1")
-    FMT = "{:>4}  {:>4}  {:>4}  {:>5}  {:>6}  {:>7}  {:>4} {:>8} {:>12} {:>8}  {:>4}  {:>8}  {:>5}  {:>4}"
-    SEP = "=" * 83
+    COL = ("Pkt","Rec","Ver","Slot","Frame","SCS","CID","Phy Cell ID", "NR-ARFCN", "TB Size","MCS","Num RBs","HARQ","K1","Layers")
+    FMT = "{:>4}  {:>4}  {:>4}  {:>5}  {:>6}  {:>7}  {:>4} {:>8} {:>12} {:>8}  {:>4}  {:>8}  {:>5}  {:>4}  {:>6}"
+    SEP = "=" * 91
 
     print(f"\n{SEP}")
     print("  B887 NR5G MAC PDSCH — Parsed Records")
@@ -237,7 +244,7 @@ def print_results(results: List[PdschRecord]):
             r.payload_idx, r.record_idx, r.version,
             _fmt(r.slot), _fmt(r.frame), _fmt(r.scs),
             _fmt(r.carrier_id), r.pci, r.nr_arfcn, r.tb_size, r.mcs,
-            r.num_rbs, r.harq_id, r.k1))
+            r.num_rbs, r.harq_id, r.k1, r.num_layers))
 
     mcs_vals = [r.mcs for r in results]
     by_ver = {}
