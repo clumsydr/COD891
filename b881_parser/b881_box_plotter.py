@@ -342,7 +342,7 @@ def main():
     # 3. Physical Resource Blocks (PRB) (coral/red-ish color)
     style_boxplot(ax3, all_prb, labels, "Resource Block Allocation", "Allocated PRBs (Num PRBs)", "#d9534f", rotation=rotation)
 
-    plt.suptitle("B881 Uplink Performance Metrics Distribution Across Runs", fontsize=15, fontweight='bold', y=0.98)
+    plt.suptitle("Uplink Performance Metrics Distribution Across Runs", fontsize=15, fontweight='bold', y=0.98)
     plt.tight_layout()
     
     # Make sure output directory exists if it's specified in a path

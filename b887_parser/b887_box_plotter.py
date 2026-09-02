@@ -106,24 +106,44 @@ def extract_b887_data(payload_file):
                 pass
     return records
 
-def process_payload_file(payload_file):
+def process_payload_file(payload_file, bin_size_sec=0.5):
     """
-    Processes a single payload file and returns arrays of TB Size, MCS,
-    and Num RBs for all parsed grants.
+    Processes a single payload file, computes Downlink Throughput at the physical layer
+    using time-bin aggregation of Transport Block sizes, and returns arrays of
+    DL Throughput (Mbps), MCS, and Num RBs for all parsed grants.
     """
     raw_records = extract_b887_data(payload_file)
     if not raw_records:
         return None
 
-    tb_size_arr = np.array([r['tb_size'] for r in raw_records], dtype=float)
+    times = np.array([r['time'] for r in raw_records], dtype=float)
+    tbs = np.array([r['tb_size'] for r in raw_records], dtype=float)
     mcs_arr = np.array([r['mcs'] for r in raw_records], dtype=float)
     num_rbs_arr = np.array([r['num_rbs'] for r in raw_records], dtype=float)
 
+    min_time = min(times)
+    max_time = max(times)
+
+    if max_time > min_time:
+        bins = np.arange(min_time, max_time + bin_size_sec, bin_size_sec)
+        if len(bins) > 1:
+            tb_sum_binned, _ = np.histogram(times, bins=bins, weights=tbs)
+            active_mask = tb_sum_binned > 0
+            if np.any(active_mask):
+                throughput_active = (tb_sum_binned[active_mask] * 8.0) / (bin_size_sec * 1e6)
+            else:
+                throughput_active = np.array([0.0])
+        else:
+            throughput_active = np.array([(np.sum(tbs) * 8.0) / (bin_size_sec * 1e6)])
+    else:
+        throughput_active = np.array([(np.sum(tbs) * 8.0) / (bin_size_sec * 1e6)])
+
     return {
-        'tb_size': tb_size_arr,
+        'throughput': throughput_active,
         'mcs': mcs_arr,
         'num_rbs': num_rbs_arr,
-        'count': len(raw_records)
+        'count': len(raw_records),
+        'active_bins': len(throughput_active)
     }
 
 def clean_filename(path):
@@ -196,13 +216,20 @@ def clean_filename(path):
 
 def style_boxplot(ax, data, labels, title, ylabel, color, rotation=0):
     """
-    Applies custom styling to make the boxplots consistent with B881 plots.
+    Applies custom styling to make the boxplots consistent across parsers.
     """
-    bp = ax.boxplot(data, labels=labels, patch_artist=True,
-                    showmeans=True, meanline=True,
-                    medianprops={'color': 'black', 'linewidth': 1.5},
-                    meanprops={'color': 'darkgreen', 'linestyle': '--', 'linewidth': 1.5},
-                    flierprops={'marker': 'o', 'markerfacecolor': 'grey', 'markeredgecolor': 'none', 'markersize': 4, 'alpha': 0.5})
+    try:
+        bp = ax.boxplot(data, tick_labels=labels, patch_artist=True,
+                        showmeans=True, meanline=True,
+                        medianprops={'color': 'black', 'linewidth': 1.5},
+                        meanprops={'color': 'darkgreen', 'linestyle': '--', 'linewidth': 1.5},
+                        flierprops={'marker': 'o', 'markerfacecolor': 'grey', 'markeredgecolor': 'none', 'markersize': 4, 'alpha': 0.5})
+    except TypeError:
+        bp = ax.boxplot(data, labels=labels, patch_artist=True,
+                        showmeans=True, meanline=True,
+                        medianprops={'color': 'black', 'linewidth': 1.5},
+                        meanprops={'color': 'darkgreen', 'linestyle': '--', 'linewidth': 1.5},
+                        flierprops={'marker': 'o', 'markerfacecolor': 'grey', 'markeredgecolor': 'none', 'markersize': 4, 'alpha': 0.5})
     
     for patch in bp['boxes']:
         patch.set_facecolor(color)
@@ -240,7 +267,7 @@ def main():
                 files.extend(matches)
                 
         # Deduplicate and filter non-raw payload files
-        files = sorted(list(set([f for f in files if "parsed" not in f and "record" not in f and "qmdl" not in f])))
+        files = sorted(list(set([f for f in files if "parsed" not in f and "record" not in f and "qmdl" not in f and "b881" not in f and "b883" not in f])))
         if not files:
             print("Error: No B887 payload files found automatically.")
             print("Usage: python b887_box_plotter.py <payload1.txt> <payload2.txt> ... [output_plot.png]")
@@ -263,34 +290,34 @@ def main():
     for f in files:
         print(f" - {f}")
 
-    all_tb_size = []
+    all_throughput = []
     all_mcs = []
     all_num_rbs = []
     labels = []
 
-    print("\n" + "=" * 80)
-    print(f"{'Run / File':<22} | {'Records':>8} | {'TB Size (Mean±Std)':>18} | {'MCS (Mean)':>10} | {'RBs (Mean)':>10}")
-    print("=" * 80)
+    print("\n" + "=" * 90)
+    print(f"{'Run / File':<22} | {'Records':>8} | {'DL PHY Spd (Mean±Std)':>24} | {'MCS (Mean)':>10} | {'RBs (Mean)':>10}")
+    print("=" * 90)
 
     for f in files:
         clean_name = clean_filename(f)
         metrics = process_payload_file(f)
         if metrics is not None and metrics['count'] > 0:
-            all_tb_size.append(metrics['tb_size'])
+            all_throughput.append(metrics['throughput'])
             all_mcs.append(metrics['mcs'])
             all_num_rbs.append(metrics['num_rbs'])
             labels.append(clean_name)
             
-            tb_mean = np.mean(metrics['tb_size'])
-            tb_std = np.std(metrics['tb_size'])
+            tp_mean = np.mean(metrics['throughput'])
+            tp_std = np.std(metrics['throughput'])
             mcs_mean = np.mean(metrics['mcs'])
             rbs_mean = np.mean(metrics['num_rbs'])
             
-            print(f"{clean_name:<22} | {metrics['count']:>8d} | {tb_mean:>8.1f} ± {tb_std:<6.1f} | {mcs_mean:>10.2f} | {rbs_mean:>10.2f}")
+            print(f"{clean_name:<22} | {metrics['count']:>8d} | {tp_mean:>9.2f} ± {tp_std:<7.2f} Mbps | {mcs_mean:>10.2f} | {rbs_mean:>10.2f}")
         else:
             print(f"  Warning: No active B887 data found in {f}. Skipping.")
 
-    print("=" * 80 + "\n")
+    print("=" * 90 + "\n")
 
     if not labels:
         print("Error: No data could be processed from the files.")
@@ -304,8 +331,8 @@ def main():
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
 
     # Style and plot each metric
-    # 1. TB Size (cool blue)
-    style_boxplot(ax1, all_tb_size, labels, "Transport Block (TB) Size", "TB Size (Bytes)", "#0288d1", rotation=rotation)
+    # 1. Downlink PHY Throughput (cool blue)
+    style_boxplot(ax1, all_throughput, labels, "Downlink Throughput", "Throughput (Mbps)", "#0288d1", rotation=rotation)
     
     # 2. MCS (purple/indigo)
     style_boxplot(ax2, all_mcs, labels, "Modulation & Coding Scheme", "MCS Index", "#6f42c1", rotation=rotation)
@@ -313,7 +340,7 @@ def main():
     # 3. Num RBs (coral/orange)
     style_boxplot(ax3, all_num_rbs, labels, "Resource Block Allocation", "Allocated RBs (Num RBs)", "#d9534f", rotation=rotation)
 
-    plt.suptitle("B887 NR5G MAC PDSCH Metrics Distribution Across Runs", fontsize=15, fontweight='bold', y=0.98)
+    plt.suptitle("Downlink Performance Metrics Distribution Across Runs", fontsize=15, fontweight='bold', y=0.98)
     plt.tight_layout()
     
     # Make sure output directory exists if it's specified in a path
@@ -326,3 +353,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

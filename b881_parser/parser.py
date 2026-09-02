@@ -36,6 +36,9 @@ class UlTbStatsRecord:
     # Block & Quality Metrics
     num_new_tx_tb:  int = 0
     num_retx_tb:    int = 0
+    num_ri:         int = 0   # Count of Rank Indicator reports (from mobileinsight.h)
+    ri:             int = 0   # Cumulative Rank Indicator value (from mobileinsight.h)
+    delta_ri:       int = 0   # The actual RI delta of THIS packet
     cqi:            int = 0
     num_ulsch_sched:int = 0
 
@@ -77,7 +80,7 @@ def parse_payload(payload: bytes, payload_idx: int, hw_timestamp: datetime.datet
     
     # Process Version 3.1
     if major_ver == 3 and minor_ver == 1:
-        O = 24        # Fixed offset for v3.1 TB Stats
+        O = 24        # Fixed offset for v3.1 TB Stats (12B QXDM + 12B Subpacket Header)
         rec_len = 80  # Fixed 80-byte record length
         
         for rec_idx in range(num_records):
@@ -94,14 +97,18 @@ def parse_payload(payload: bytes, payload_idx: int, hw_timestamp: datetime.datet
             total_pwr   = u32(payload, O+40)
             num_new_tb  = u32(payload, O+44)
             num_retx_tb = u32(payload, O+48)
+            num_ri      = u32(payload, O+52)
+            ri          = u32(payload, O+56)
             cqi         = u32(payload, O+64)
-            ulsch_sched = u32(payload, O+76)
+            ulsch_sched = u32(payload, O+68)
             
             results.append(UlTbStatsRecord(
                 timestamp=hw_timestamp, payload_idx=payload_idx, record_idx=rec_idx,
                 version="3.1", new_tx_bytes=new_tx, delta_tx_bytes=0, # Computed at the stream level
                 retx_bytes=retx, num_mcs=num_mcs, num_prb=num_prb, phr=phr, total_power=total_pwr,
-                num_new_tx_tb=num_new_tb, num_retx_tb=num_retx_tb, cqi=cqi, num_ulsch_sched=ulsch_sched
+                num_new_tx_tb=num_new_tb, num_retx_tb=num_retx_tb,
+                num_ri=num_ri, ri=ri, delta_ri=0,
+                cqi=cqi, num_ulsch_sched=ulsch_sched
             ))
             
             O += rec_len
@@ -133,27 +140,32 @@ def parse_stream(text: str, verbose: bool = True) -> List[UlTbStatsRecord]:
     for idx, (pkt, hw_timestamp) in enumerate(split_packets(raw)):
         all_results.extend(parse_payload(pkt, idx, hw_timestamp))
         
-    # Process sequential deltas to find actual payload size per packet
+    # Process sequential deltas to find actual payload size and delta RI per packet
     if all_results:
         # Ensure chronological order
         all_results.sort(key=lambda x: x.timestamp)
-        prev_cumulative = all_results[0].new_tx_bytes
+        prev_cumulative_tx = all_results[0].new_tx_bytes
+        prev_cumulative_ri = all_results[0].ri
         
         for r in all_results:
-            delta = r.new_tx_bytes - prev_cumulative
+            delta_tx = r.new_tx_bytes - prev_cumulative_tx
             # Protect against baseband counter resets/overflows
-            r.delta_tx_bytes = delta if delta >= 0 else 0 
-            prev_cumulative = r.new_tx_bytes
+            r.delta_tx_bytes = delta_tx if delta_tx >= 0 else 0 
+            prev_cumulative_tx = r.new_tx_bytes
             
+            delta_ri = r.ri - prev_cumulative_ri
+            r.delta_ri = delta_ri if delta_ri >= 0 else 0
+            prev_cumulative_ri = r.ri
+                
     if verbose and all_results:
-        print("\n=======================================================================")
+        print("\n=========================================================================================================")
         print("  B881 NR5G MAC UL TB Stats — Parsed Records")
-        print("=======================================================================")
-        print(f"  {'Pkt':<5} {'Ver':<6} {'Delta Tx (Bytes)':<18} {'Cumul Tx':<15} {'ReTx':<10}")
-        print("  " + "-" * 67)
+        print("=========================================================================================================")
+        print(f"  {'Pkt':<5} {'Ver':<6} {'Delta Tx (Bytes)':<18} {'Cumul Tx':<15} {'ReTx':<10} {'Num RI':<10} {'RI':<12} {'Delta RI':<10} {'CQI':<6}")
+        print("  " + "-" * 102)
         for r in all_results:
-            print(f"  {r.payload_idx:<5} {r.version:<6} {r.delta_tx_bytes:<18} {r.new_tx_bytes:<15} {r.retx_bytes:<10}")
-        print("=======================================================================\n")
+            print(f"  {r.payload_idx:<5} {r.version:<6} {r.delta_tx_bytes:<18} {r.new_tx_bytes:<15} {r.retx_bytes:<10} {r.num_ri:<10} {r.ri:<12} {r.delta_ri:<10} {r.cqi:<6}")
+        print("=========================================================================================================\n")
             
     return all_results
 
@@ -183,4 +195,14 @@ def main():
         write_csv(results, args.csv)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BrokenPipeError:
+        try:
+            sys.stdout.close()
+        except Exception:
+            pass
+        try:
+            sys.stderr.close()
+        except Exception:
+            pass

@@ -8,7 +8,7 @@ INFILE=SpeedTest
 INDEX=2
 CAP_DIR=
 
-.PHONY: all process_data process_all parse_capture plot_box_data plot_mcs_retx plot_box
+.PHONY: all process_data process_all plot_box_data plot_mcs_retx plot_box
 
 all:
 	make process_data
@@ -26,16 +26,16 @@ process_data:
 		QMDL_FILES=$$(ls $$d/*.qmdl 2>/dev/null | sort); \
 		SCAT_TXT="$$d/qmdl-to-scat.txt"; \
 		PAYLOAD_TXT="$$d/payloads_b881.txt"; \
-		PARSED_TXT="$$d/payloads_parsed_new.txt"; \
+		PARSED_TXT="$$d/payloads_parsed_b881.txt"; \
 		echo "[1/5] Running scat on all QMDLs in $$d..."; \
-		scat -t qc -d $$QMDL_FILES > "$$SCAT_TXT"; \
+# 		scat -t qc -d $$QMDL_FILES > "$$SCAT_TXT"; \
 		echo "[2/5] Extracting B881 payloads into single file..."; \
-		python3 $(MAKEFILE_DIR)qmdl_to_codes.py "$$SCAT_TXT" "$$PAYLOAD_TXT"; \
+# 		python3 ../qmdl_to_codes.py "$$SCAT_TXT" "$$PAYLOAD_TXT"; \
 		echo "[3/5] Parsing B881 records..."; \
 		python3 $(MAKEFILE_DIR)parser.py "$$PAYLOAD_TXT" > "$$PARSED_TXT"; \
 		pcap_file=$$(ls $$d/*.pcap 2>/dev/null | head -n 1); \
 		echo "[4/5] Plotting MCS vs Retransmissions..."; \
-		python3 $(MAKEFILE_DIR)b881_box_plotter.py "$$PAYLOAD_TXT" "$$d/b881_box_plot.png"; \
+# 		python3 $(MAKEFILE_DIR)b881_box_plotter.py "$$PAYLOAD_TXT" "$$d/b881_box_plot.png"; \
 	done; \
 	echo "============================================================"; \
 	echo "Generating overall B881 box plots across all processed capture directories..."; \
@@ -45,43 +45,6 @@ process_data:
 	echo "Finished processing and plotting all capture directories."
 
 process_all: process_data
-
-# ==============================================================================
-# Parse & plot all QMDL files in a single capture directory
-# Usage: make parse_capture CAP_DIR=../loggers/data/Airtel/Amul_IITDelhi/20260812/capture_000_20260812_114830
-# ==============================================================================
-parse_capture:
-	@if [ -z "$(CAP_DIR)" ]; then \
-		echo "Error: Please specify CAP_DIR=<path_to_capture_directory>"; \
-		echo "Example: make parse_capture CAP_DIR=../loggers/data/Airtel/Amul_IITDelhi/20260812/capture_000_20260812_114830"; \
-		exit 1; \
-	fi
-	@echo "============================================================"
-	@echo "Processing capture directory: $(CAP_DIR)"
-	@QMDL_FILES=$$(ls $(CAP_DIR)/*.qmdl 2>/dev/null | sort); \
-	if [ -z "$$QMDL_FILES" ]; then \
-		echo "Error: No .qmdl files found in $(CAP_DIR)"; \
-		exit 1; \
-	fi; \
-	SCAT_TXT="$(CAP_DIR)/qmdl-to-scat.txt"; \
-	PAYLOAD_TXT="$(CAP_DIR)/payloads_b881.txt"; \
-	PARSED_TXT="$(CAP_DIR)/payloads_parsed_new.txt"; \
-	echo "[1/5] Running scat decoding across all QMDLs in capture..."; \
-	scat -t qc -d $$QMDL_FILES > "$$SCAT_TXT"; \
-	echo "[2/5] Extracting B881 hex payloads into single file: $$PAYLOAD_TXT..."; \
-	python3 $(MAKEFILE_DIR)qmdl_to_codes.py "$$SCAT_TXT" "$$PAYLOAD_TXT"; \
-	echo "[3/5] Parsing B881 records with timestamps into: $$PARSED_TXT..."; \
-	python3 $(MAKEFILE_DIR)parser.py "$$PAYLOAD_TXT" > "$$PARSED_TXT"; \
-	pcap_file=$$(ls $(CAP_DIR)/*.pcap 2>/dev/null | head -n 1); \
-	if [ -f "$$pcap_file" ]; then \
-		echo "[4/5] Plotting B881 correlation graph against PCAP: $$pcap_file..."; \
-		python3 $(MAKEFILE_DIR)b881_plotter.py "$$PAYLOAD_TXT" "$$pcap_file" "$(CAP_DIR)/b881_correlation_plot.png"; \
-	else \
-		echo "[4/5] No .pcap file found in $(CAP_DIR), skipping PCAP correlation plot."; \
-	fi; \
-	echo "[5/5] Plotting MCS vs Retransmissions..."; \
-	python3 $(MAKEFILE_DIR)b881_mcs_retx_plotter.py "$$PAYLOAD_TXT" "$(CAP_DIR)/b881_mcs_retx.png"; \
-	echo "Done! Successfully processed and plotted $(CAP_DIR)"
 
 plot_box_data:
 	@mkdir -p $(MAKEFILE_DIR)plots

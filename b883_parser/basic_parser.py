@@ -45,6 +45,7 @@ class UlSchedRecord:
     rb_start:    Optional[int] = None
     tb_size:     Optional[int] = None
     pucch_fmt:   Optional[int] = None
+    rank:        Optional[int] = None
 
     def to_dict(self):
         return {f.name: getattr(self, f.name) for f in dc_fields(self)}
@@ -111,7 +112,7 @@ def parse_payload(payload: bytes, payload_idx: int, hw_timestamp: datetime.datet
             chan_type = chan_map.get(chan_nibble, f"UNK_{chan_nibble}")
 
             # 3. Unpack Specific Payloads (Starts at Offset 8)
-            p_start, p_num, p_harq, p_mcs, p_rbs, p_rbst, p_tb, p_fmt, c_rnti = [None]*9
+            p_start, p_num, p_harq, p_mcs, p_rbs, p_rbst, p_tb, p_fmt, p_rank, c_rnti = [None]*10
             
             # PUSCH bit-unpacking
             if chan_type == "PUSCH" and O + 8 + 30 <= len(payload):
@@ -123,6 +124,8 @@ def parse_payload(payload: bytes, payload_idx: int, hw_timestamp: datetime.datet
                 p_rbst  = (p[3] << 1) | (p[2] >> 7)
                 p_rbs   = u16(p, 4) & 0x1FF
                 p_tb    = ((u16(p, 6) & 0x1FFF) << 5) | ((p[5] >> 3) & 0x1F)
+                tx_mode = p[8] & 0x03
+                p_rank  = tx_mode + 1  # 0=SISO (Rank 1), 1=MIMO (Rank 2)
                 c_rnti  = u16(p, 28) # RNTI is packed deeply at offset 28 of the payload
                 
             # PUCCH bit-unpacking
@@ -139,7 +142,8 @@ def parse_payload(payload: bytes, payload_idx: int, hw_timestamp: datetime.datet
                 version="3.17", slot=slot, frame=frame, scs=scs, carrier_id=carrier_id, 
                 rnti_type=rnti_type, c_rnti=c_rnti, chan_type=chan_type, length=rec_len,
                 start_sym=p_start, num_sym=p_num, harq_id=p_harq, mcs=p_mcs, 
-                num_rbs=p_rbs, rb_start=p_rbst, tb_size=p_tb, pucch_fmt=p_fmt
+                num_rbs=p_rbs, rb_start=p_rbst, tb_size=p_tb, pucch_fmt=p_fmt,
+                rank=p_rank
             ))
             
             O += rec_len
@@ -194,15 +198,15 @@ def print_results(results: List[UlSchedRecord]):
         return
 
     # Updated columns to handle dynamic payloads and UI friendliness 
-    COL = ("Pkt", "Rec", "Ver", "Slot/Abs", "CC", "Type", "RNTI", "C-RNTI", "Len", "Syms", "Fmt/HQ", "MCS", "RB[St:Sz]", "TBSize")
-    FMT = "{:>4} {:>3} {:>5} {:>8} {:>2} {:>9} {:>8} {:>6} {:>3} {:>9} {:>6} {:>3} {:>9} {:>8}"
-    SEP = "=" * 110
+    COL = ("Pkt", "Rec", "Ver", "Slot/Abs", "CC", "Type", "RNTI", "C-RNTI", "Len", "Syms", "Fmt/HQ", "MCS", "Rank", "RB[St:Sz]", "TBSize")
+    FMT = "{:>4} {:>3} {:>5} {:>8} {:>2} {:>9} {:>8} {:>6} {:>3} {:>9} {:>6} {:>3} {:>4} {:>9} {:>8}"
+    SEP = "=" * 115
 
     print(f"\n{SEP}")
     print("  B883 NR5G MAC UL Schedule — Parsed Records with Hardware Timestamps")
     print(SEP)
     print("  " + FMT.format(*COL))
-    print("  " + "-" * 108)
+    print("  " + "-" * 113)
     for r in results:
         # Safely handle attributes mapped between v2 and v3
         slot_val = str(r.abs_slot) if r.abs_slot is not None else f"{_fmt(r.slot)}/{_fmt(r.frame)}"
@@ -214,10 +218,11 @@ def print_results(results: List[UlSchedRecord]):
         print("  " + FMT.format(
             r.payload_idx, r.record_idx, r.version, slot_val, _fmt(r.carrier_id),
             r.chan_type, _fmt(r.rnti_type), c_r, _fmt(r.length), syms, _fmt(f_h),
-            _fmt(r.mcs), rbs, _fmt(r.tb_size)))
+            _fmt(r.mcs), _fmt(r.rank), rbs, _fmt(r.tb_size)))
 
     # Compute Statistics
     mcs_vals = [r.mcs for r in results if r.mcs is not None]
+    rank_vals = [r.rank for r in results if r.rank is not None]
     ch_counts = {}
     for r in results:
         ch_counts[r.chan_type] = ch_counts.get(r.chan_type, 0) + 1
@@ -227,6 +232,9 @@ def print_results(results: List[UlSchedRecord]):
     if mcs_vals:
         print(f"  PUSCH MCS     : min={min(mcs_vals)}, max={max(mcs_vals)}, "
               f"avg={sum(mcs_vals)/len(mcs_vals):.2f}")
+    if rank_vals:
+        print(f"  PUSCH Rank    : min={min(rank_vals)}, max={max(rank_vals)}, "
+              f"avg={sum(rank_vals)/len(rank_vals):.2f}")
     print(SEP + "\n")
 
 def write_csv(results: List[UlSchedRecord], path: str):
@@ -254,9 +262,19 @@ def main():
             if r.chan_type == "PUSCH" and r.mcs is not None:
                 ts_str = r.timestamp.strftime('%H:%M:%S.%f')
                 print(f"time={ts_str} pkt={r.payload_idx} rec={r.record_idx} ver={r.version} "
-                      f"slot={_fmt(r.abs_slot)} MCS={r.mcs} RBs={r.num_rbs}")
+                      f"slot={_fmt(r.abs_slot)} MCS={r.mcs} Rank={_fmt(r.rank)} RBs={r.num_rbs}")
     if args.csv:
         write_csv(results, args.csv)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BrokenPipeError:
+        try:
+            sys.stdout.close()
+        except Exception:
+            pass
+        try:
+            sys.stderr.close()
+        except Exception:
+            pass
